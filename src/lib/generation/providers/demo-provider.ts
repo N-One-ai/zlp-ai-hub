@@ -64,6 +64,28 @@ function buildPlaceholderSvg(width: number, height: number, prompt: string, inde
 
 export class DemoImageProvider implements AIImageProvider {
   readonly id = "demo";
+  readonly label = "Demo (chưa cấu hình AI thật)";
+  readonly description = "Ảnh minh hoạ, dùng khi chưa có model AI nào được cấu hình.";
+  // No real constraint (prompt is just wrapped onto an SVG placeholder,
+  // already capped visually at 4 lines) — aligned with the real
+  // providers' verified ceiling so Demo isn't an arbitrary odd one out.
+  readonly capabilities = {
+    maxCount: 4,
+    supportsBatchCount: false,
+    supportsNegativePrompt: false,
+    maxPromptLength: 32000,
+    maxReferenceImages: 0,
+    supportsAspectRatioResolution: false,
+    supportsPromptEnhancement: false,
+  };
+
+  isConfigured(): boolean {
+    return true; // always available — the zero-config safety net
+  }
+
+  describeAdjustments(): string[] {
+    return [];
+  }
 
   async generateImages(params: GenerateImageParams): Promise<GeneratedImage[]> {
     const results: GeneratedImage[] = [];

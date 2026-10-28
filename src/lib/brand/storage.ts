@@ -44,3 +44,21 @@ export async function uploadBrandAsset(
 export async function deleteBrandAsset(supabase: Awaited<ReturnType<typeof createClient>>, path: string) {
   return supabase.storage.from(BUCKET).remove([path]);
 }
+
+/** Downloads a brand asset's actual bytes (not just a signed URL) — used
+ * to read a logo's real natural width/height server-side (see
+ * image-dimensions.ts) so a placed logo layer keeps its true aspect ratio
+ * instead of being forced into a square. Returns null on any error
+ * (RLS-scoped client, same fail-closed convention as resolveSignedUrl). */
+export async function downloadBrandAsset(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  path: string | null
+): Promise<Buffer | null> {
+  if (!path) return null;
+  const { data, error } = await supabase.storage.from(BUCKET).download(path);
+  if (error || !data) {
+    if (error) console.error("[downloadBrandAsset]", error);
+    return null;
+  }
+  return Buffer.from(await data.arrayBuffer());
+}

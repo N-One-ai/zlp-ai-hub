@@ -3,7 +3,8 @@
 import { useEffect, useRef } from "react";
 import { Stage, Layer, Image as KonvaImage, Text as KonvaText, Rect, Ellipse, Transformer, Line } from "react-konva";
 import type Konva from "konva";
-import { useHtmlImage } from "./use-html-image";
+import { useFeatheredImage } from "./use-feathered-image";
+import { computeCoverCrop } from "@/lib/design/resize";
 import type { ResolvedLayer } from "@/types/design";
 import type { SafeZone } from "@/types/database";
 
@@ -20,7 +21,8 @@ function LayerNode({
   onSelect: () => void;
   onChange: (patch: Partial<ResolvedLayer>) => void;
 }) {
-  const image = useHtmlImage(layer.imageUrl);
+  const image = useFeatheredImage(layer.imageUrl, layer.featherPx);
+  if (layer.visible === false) return null;
 
   const common = {
     id: layer.id,
@@ -57,7 +59,7 @@ function LayerNode({
         width={layer.width}
         height={layer.height}
         text={layer.text ?? ""}
-        fontFamily={layer.fontFamily ?? "Inter"}
+        fontFamily={`${layer.fontFamily ?? "Aeonik Pro"}, ${layer.fontFallback ?? "sans-serif"}`}
         fontSize={layer.fontSize ?? 24}
         fontStyle={layer.fontWeight && layer.fontWeight >= 600 ? "bold" : "normal"}
         fill={layer.color ?? "#000000"}
@@ -88,6 +90,17 @@ function LayerNode({
   // neutral placeholder rect so an empty background/logo slot is still
   // visible and selectable.
   if (image) {
+    // The background layer's destination box is whatever the current
+    // size preset is — it must never stretch the source image to fit a
+    // different aspect ratio, so it's drawn with a live "cover fit" crop
+    // (CSS object-fit: cover equivalent) computed from the image's real
+    // decoded size every render, not a stretch. image.width/height equal
+    // the natural pixel size here since this <img>/<canvas> never has
+    // its width/height attributes set (see use-html-image.ts).
+    if (layer.type === "background") {
+      const crop = computeCoverCrop(image.width, image.height, layer.width, layer.height, layer.focalX ?? 0.5, layer.focalY ?? 0.5);
+      return <KonvaImage {...common} image={image} width={layer.width} height={layer.height} crop={crop} />;
+    }
     return <KonvaImage {...common} image={image} width={layer.width} height={layer.height} />;
   }
   return (

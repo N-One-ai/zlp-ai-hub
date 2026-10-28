@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
+import { resolveAvatarUrl } from "@/lib/profile/storage";
 import type { CurrentUser, WorkspaceMembership, MemberWithProfile } from "@/types/workspace";
 
 export const ACTIVE_WORKSPACE_COOKIE = "active_workspace_id";
@@ -24,7 +25,7 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
     return null;
   }
 
-  return { id: data.id, name: data.name, email: data.email, avatarUrl: data.avatar_url };
+  return { id: data.id, name: data.name, email: data.email, avatarUrl: await resolveAvatarUrl(supabase, data.avatar_url) };
 }
 
 /** Every active workspace the current user belongs to. */
@@ -92,16 +93,21 @@ export async function getWorkspaceMembers(workspaceId: string): Promise<MemberWi
     return [];
   }
 
-  return (data ?? [])
-    .filter((row): row is typeof row & { profiles: { name: string | null; email: string; avatar_url: string | null } } => row.profiles !== null)
-    .map((row) => ({
+  const rows = (data ?? []).filter(
+    (row): row is typeof row & { profiles: { name: string | null; email: string; avatar_url: string | null } } =>
+      row.profiles !== null
+  );
+
+  return Promise.all(
+    rows.map(async (row) => ({
       membershipId: row.id,
       userId: row.user_id,
       name: row.profiles.name,
       email: row.profiles.email,
-      avatarUrl: row.profiles.avatar_url,
+      avatarUrl: await resolveAvatarUrl(supabase, row.profiles.avatar_url),
       role: row.role,
       status: row.status,
       createdAt: row.created_at,
-    }));
+    }))
+  );
 }

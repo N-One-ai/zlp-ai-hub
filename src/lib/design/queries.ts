@@ -19,6 +19,10 @@ export interface LoadedDesignDocument {
   height: number;
   sizePresetId: string | null;
   layers: ResolvedLayer[];
+  /** Other size presets the user has already visited for this asset —
+   * see DesignDocumentContent.sizeVariants. A preset not present here
+   * simply hasn't been visited yet. */
+  sizeVariants: Record<string, ResolvedLayer[]>;
 }
 
 async function resolveLayers(
@@ -31,6 +35,17 @@ async function resolveLayers(
       imageUrl: layer.imagePath ? await resolveSignedAssetUrl(supabase, layer.imagePath) : null,
     }))
   );
+}
+
+async function resolveSizeVariants(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  variants: Record<string, DesignLayer[]> | undefined
+): Promise<Record<string, ResolvedLayer[]>> {
+  if (!variants) return {};
+  const entries = await Promise.all(
+    Object.entries(variants).map(async ([presetId, layers]) => [presetId, await resolveLayers(supabase, layers)] as const)
+  );
+  return Object.fromEntries(entries);
 }
 
 export async function getBannerAsset(assetId: string): Promise<BannerAsset | null> {
@@ -90,6 +105,7 @@ export async function getCurrentDesignDocument(assetId: string): Promise<LoadedD
     height: data.height,
     sizePresetId: data.size_preset_id,
     layers: await resolveLayers(supabase, data.document.layers),
+    sizeVariants: await resolveSizeVariants(supabase, data.document.sizeVariants),
   };
 }
 

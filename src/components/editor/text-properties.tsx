@@ -9,14 +9,20 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { cn } from "@/lib/utils";
 import { AVAILABLE_FONTS } from "@/lib/brand/fonts";
 import type { ResolvedLayer } from "@/types/design";
-import type { TextAlign } from "@/types/database";
+import type { TextAlign, BrandColor } from "@/types/database";
 
 export function TextProperties({
   layer,
   onChange,
+  guidelineColors = [],
 }: {
   layer: ResolvedLayer;
   onChange: (patch: Partial<ResolvedLayer>) => void;
+  /** Brand guideline's color palette, shown as quick-pick swatches above
+   * the free-form color picker/HEX field — the guideline's own colors
+   * stay one click away instead of requiring the user to retype a hex
+   * value they already defined elsewhere. */
+  guidelineColors?: BrandColor[];
 }) {
   return (
     <div className="flex flex-col gap-3">
@@ -60,6 +66,24 @@ export function TextProperties({
         </div>
         <div className="flex flex-col gap-1.5">
           <Label className="text-xs">Màu</Label>
+          {guidelineColors.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {guidelineColors.map((c) => (
+                <button
+                  key={c.hex}
+                  type="button"
+                  title={`${c.name} — ${c.hex}`}
+                  aria-label={`Dùng màu ${c.name}`}
+                  onClick={() => onChange({ color: c.hex })}
+                  className={cn(
+                    "size-5 rounded-full border-2",
+                    layer.color?.toLowerCase() === c.hex.toLowerCase() ? "border-primary" : "border-transparent"
+                  )}
+                  style={{ backgroundColor: c.hex }}
+                />
+              ))}
+            </div>
+          )}
           <div className="flex items-center gap-1.5">
             <input
               type="color"

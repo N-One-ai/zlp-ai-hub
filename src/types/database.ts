@@ -245,6 +245,9 @@ export interface Database {
           params: GenerationParams;
           provider: string;
           model: string | null;
+          requested_model: string | null;
+          final_model: string | null;
+          attempts: GenerationAttempt[];
           status: GenerationJobStatus;
           error: string | null;
           output: GenerationOutputItem[];
@@ -262,6 +265,9 @@ export interface Database {
           params?: GenerationParams;
           provider?: string;
           model?: string | null;
+          requested_model?: string | null;
+          final_model?: string | null;
+          attempts?: GenerationAttempt[];
           status?: GenerationJobStatus;
           error?: string | null;
           output?: GenerationOutputItem[];
@@ -279,6 +285,9 @@ export interface Database {
           params?: GenerationParams;
           provider?: string;
           model?: string | null;
+          requested_model?: string | null;
+          final_model?: string | null;
+          attempts?: GenerationAttempt[];
           status?: GenerationJobStatus;
           error?: string | null;
           output?: GenerationOutputItem[];
@@ -517,6 +526,12 @@ export interface GenerationParams {
   height: number;
   count: number;
   sizePresetId?: string | null;
+  /** Marketing Studio-specific — resolution tier ("1k"/"2k"/"4k") sent to
+   * the provider; null for models that don't use this param. */
+  resolution?: string | null;
+  /** Marketing Studio-specific — the enhancement preset id sent, if any. */
+  presetId?: string | null;
+  enhancePrompt?: boolean;
 }
 
 export interface GenerationOutputItem {
@@ -524,6 +539,15 @@ export interface GenerationOutputItem {
   width: number;
   height: number;
   isDemo: boolean;
+}
+
+export interface GenerationAttempt {
+  model: string;
+  status: "started" | "succeeded" | "failed";
+  errorCode?: string;
+  startedAt: string;
+  finishedAt?: string;
+  adjustments?: string[];
 }
 
 export type CreativeAssetType = "image" | "banner" | "video";
@@ -548,8 +572,32 @@ export interface DesignLayer {
   rotation: number;
   zIndex: number;
   locked?: boolean;
+  /** Defaults to true when absent (every layer created before this field
+   * existed stays visible, same as before) — explicit false hides it from
+   * the canvas without deleting it. */
+  visible?: boolean;
+  /** Tags a text layer as the banner's single tagline/subtitle, so the
+   * "Nội dung chữ" panel knows which layer to create/update/select instead
+   * of guessing from id or position. Absent for any other text layer
+   * (e.g. ones added via the generic "Thêm chữ" tool). */
+  role?: "tagline" | "subtitle";
   // image / background / logo
   imagePath?: string;
+  /** Background-layer-only "cover fit" focal point (0..1, default 0.5/0.5
+   * = centered) — how the source image's natural aspect ratio is cropped
+   * to fill this layer's destination box without ever stretching it. The
+   * actual crop rect is recomputed live from the image's real decoded
+   * size every render (see computeCoverCrop in lib/design/resize.ts) —
+   * only the focal point itself is persisted. */
+  focalX?: number;
+  focalY?: number;
+  /** Only set on an "image" layer produced by the AI-background feature's
+   * local segmentation (see lib/image-processing/background-removal.ts) —
+   * its presence is what tells the canvas to render with a LIVE,
+   * re-adjustable feathered alpha instead of the image as-is. 0 = hard
+   * edge (no feather), max 64. Absent entirely for every other image/
+   * background/logo layer, which never go through this pipeline. */
+  featherPx?: number;
   // text
   text?: string;
   fontFamily?: string;
@@ -566,5 +614,15 @@ export interface DesignLayer {
 }
 
 export interface DesignDocumentContent {
+  /** The layers for the size preset currently active when this version
+   * was saved — kept as the top-level field for back-compat with every
+   * reader that only ever needed "the" layers (exports, duplication). */
   layers: DesignLayer[];
+  /** Every OTHER size preset the user has visited in the editor for this
+   * asset, each with its own independently-adjusted layer positions/crop
+   * — restored verbatim when switching back to that size. A preset not
+   * yet visited simply has no entry here; its layout is derived on the
+   * fly (see scaleLayersToSize) the first time the user switches to it,
+   * then saved here on the next "Lưu". Keyed by size_presets.id. */
+  sizeVariants?: Record<string, DesignLayer[]>;
 }

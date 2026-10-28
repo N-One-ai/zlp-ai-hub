@@ -36,8 +36,10 @@ export function checkGuideline(
     blocksExport: true,
   });
 
-  // 2. Logo tồn tại
-  const logoLayers = layers.filter((l) => l.type === "logo");
+  // 2. Logo tồn tại — một layer type "logo" không có ảnh thật (imagePath
+  // trống, ví dụ vừa tạo nhưng chưa chọn phiên bản) không được tính là
+  // "có logo", tránh báo "Đạt" sai khi canvas thực ra chưa hiện logo nào.
+  const logoLayers = layers.filter((l) => l.type === "logo" && !!l.imagePath);
   const hasLogo = logoLayers.length > 0;
   results.push({
     id: "logo-exists",

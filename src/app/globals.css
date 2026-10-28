@@ -7,7 +7,12 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
+  /* Single source of truth for the app's typeface — every component reads
+   * this via the font-sans/font-heading utilities, never a hardcoded family.
+   * Aeonik Pro (brand typeface, self-hosted via next/font/local in
+   * layout.tsx) first, Be Vietnam Pro as a Vietnamese-diacritic-complete
+   * fallback, then generic stacks. */
+  --font-sans: var(--font-aeonik-pro), var(--font-vn-fallback), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono);
   --font-heading: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
@@ -27,6 +32,7 @@
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
@@ -39,6 +45,14 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  /* Semantic status colors — not part of the shadcn default token set.
+     Used for "ready/success" and "needs review/warning" states (asset
+     status badges, guideline check results) so those states never
+     borrow the primary brand accent for something that isn't a CTA. */
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -48,73 +62,95 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* Light fallback — the app defaults to dark (see ThemeProvider in
+   layout.tsx) and ships no theme switcher yet, so this exists mainly for
+   correctness/robustness (e.g. a forced OS light override) rather than as
+   a polished second theme. */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  --background: oklch(0.99 0.004 290);
+  --foreground: oklch(0.2 0.025 290);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: oklch(0.2 0.025 290);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --popover-foreground: oklch(0.2 0.025 290);
+  --primary: oklch(0.423 0.232 263.7); /* #0033C9 */
+  --primary-foreground: oklch(0.98 0.01 264);
+  --secondary: oklch(0.95 0.012 290);
+  --secondary-foreground: oklch(0.26 0.03 290);
+  --muted: oklch(0.96 0.01 290);
+  --muted-foreground: oklch(0.5 0.025 290);
+  --accent: oklch(0.88 0.1 195);
+  --accent-foreground: oklch(0.22 0.05 195);
+  --success: oklch(0.6 0.15 165);
+  --success-foreground: oklch(0.99 0.01 165);
+  --warning: oklch(0.72 0.16 80);
+  --warning-foreground: oklch(0.2 0.04 80);
+  --destructive: oklch(0.58 0.22 25);
+  --destructive-foreground: oklch(0.99 0.01 25);
+  --border: oklch(0.9 0.012 290);
+  --input: oklch(0.9 0.012 290);
+  --ring: oklch(0.423 0.232 263.7 / 50%);
+  --chart-1: oklch(0.423 0.232 263.7);
+  --chart-2: oklch(0.72 0.14 195);
+  --chart-3: oklch(0.75 0.16 85);
+  --chart-4: oklch(0.65 0.2 350);
+  --chart-5: oklch(0.65 0.16 165);
+  /* Single radius scale for the whole app — --radius-lg (= --radius, 8px)
+     is the standard for every control (button, input, select, textarea,
+     dropdown/menu popups, sidebar nav row); --radius-xl (11.2px) is the
+     standard for large cards/panels (Card, hero cards, auth card, empty
+     states). Change this one value, not individual rounded-* classes. */
+  --radius: 8px;
+  --sidebar: oklch(0.16 0.025 290);
+  --sidebar-foreground: oklch(0.85 0.012 290);
+  --sidebar-primary: oklch(0.423 0.232 263.7);
+  --sidebar-primary-foreground: oklch(0.98 0.01 264);
+  --sidebar-accent: oklch(0.22 0.03 290);
+  --sidebar-accent-foreground: oklch(0.96 0.01 290);
+  --sidebar-border: oklch(1 0 0 / 8%);
+  --sidebar-ring: oklch(0.55 0.22 263.7 / 50%);
 }
 
+/* Primary theme — dark, Zalopay brand blue (#0033C9) as primary, with a
+   cyan accent. Card surfaces sit one clear step lighter than the page
+   background so grouping reads at a glance without heavy borders. */
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
+  --background: oklch(0.15 0.022 290);
+  --foreground: oklch(0.96 0.008 290);
+  --card: oklch(0.205 0.028 290);
+  --card-foreground: oklch(0.96 0.008 290);
+  --popover: oklch(0.22 0.03 290);
+  --popover-foreground: oklch(0.96 0.008 290);
+  --primary: oklch(0.423 0.232 263.7); /* #0033C9 */
+  --primary-foreground: oklch(0.98 0.01 264);
+  --secondary: oklch(0.27 0.032 290);
+  --secondary-foreground: oklch(0.94 0.008 290);
+  --muted: oklch(0.24 0.028 290);
+  --muted-foreground: oklch(0.68 0.018 290);
+  --accent: oklch(0.8 0.13 195);
+  --accent-foreground: oklch(0.15 0.03 195);
+  --success: oklch(0.78 0.14 165);
+  --success-foreground: oklch(0.15 0.03 165);
+  --warning: oklch(0.8 0.15 85);
+  --warning-foreground: oklch(0.18 0.035 85);
+  --destructive: oklch(0.7 0.19 25);
+  --destructive-foreground: oklch(0.15 0.03 25);
   --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --input: oklch(1 0 0 / 14%);
+  --ring: oklch(0.55 0.22 263.7 / 55%);
+  --chart-1: oklch(0.423 0.232 263.7);
+  --chart-2: oklch(0.8 0.13 195);
+  --chart-3: oklch(0.8 0.15 85);
+  --chart-4: oklch(0.72 0.18 350);
+  --chart-5: oklch(0.78 0.14 165);
+  --sidebar: oklch(0.115 0.02 290);
+  --sidebar-foreground: oklch(0.8 0.015 290);
+  --sidebar-primary: oklch(0.423 0.232 263.7);
+  --sidebar-primary-foreground: oklch(0.98 0.01 264);
+  --sidebar-accent: oklch(0.2 0.028 290);
+  --sidebar-accent-foreground: oklch(0.95 0.008 290);
+  --sidebar-border: oklch(1 0 0 / 8%);
+  --sidebar-ring: oklch(0.55 0.22 263.7 / 50%);
 }
 
 @layer base {
@@ -126,5 +162,21 @@
   }
   html {
     @apply font-sans;
+  }
+}
+
+/* PRD §9 / design brief: "chỉ dùng chuyển động nhẹ, ngắn... tôn trọng
+   prefers-reduced-motion". Tailwind's own animate-* utilities (spin, the
+   accordion/dialog open-close keyframes from tw-animate-css) don't check
+   this on their own, so it's enforced globally here instead of per
+   component. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

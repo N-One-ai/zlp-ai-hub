@@ -1,13 +1,13 @@
 import Link from "next/link";
-import { Library as LibraryIcon } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
+import { Library as LibraryIcon, RefreshCw } from "lucide-react";
 import { requireActiveWorkspace } from "@/lib/workspace/guards";
 import { getBrands } from "@/lib/brand/queries";
-import { getWorkspaceMembers } from "@/lib/workspace/queries";
+import { getCurrentUser, getWorkspaceMembers } from "@/lib/workspace/queries";
 import { getLibraryAssets } from "@/lib/library/queries";
 import { LibraryFilters } from "@/components/library/library-filters";
 import { AssetGrid } from "@/components/library/asset-grid";
 import { LibraryPagination } from "@/components/library/library-pagination";
+import { EmptyState } from "@/components/layout/empty-state";
 import type { CreativeAssetStatus, CreativeAssetType } from "@/types/database";
 
 export default async function LibraryPage({
@@ -36,10 +36,11 @@ export default async function LibraryPage({
     page: Number(sp.page) || 1,
   };
 
-  const [result, brands, members] = await Promise.all([
+  const [result, brands, members, user] = await Promise.all([
     getLibraryAssets(workspace.workspaceId, filters),
     getBrands(workspace.workspaceId),
     getWorkspaceMembers(workspace.workspaceId),
+    getCurrentUser(),
   ]);
 
   const totalPages = Math.max(1, Math.ceil(result.total / result.pageSize));
@@ -60,7 +61,7 @@ export default async function LibraryPage({
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-xl font-semibold tracking-tight">Thư viện</h1>
+        <h1 className="font-heading text-2xl font-bold tracking-tight">Thư viện</h1>
         <p className="text-sm text-muted-foreground">
           {result.total} tài sản{filters.sort === "oldest" ? " · cũ nhất trước" : ""}
         </p>
@@ -69,26 +70,42 @@ export default async function LibraryPage({
       <LibraryFilters brands={brands.filter((b) => b.status === "active")} members={members} />
 
       {result.error ? (
-        <Card>
-          <CardContent className="flex flex-col items-center gap-2 py-10 text-center">
-            <p className="text-sm text-muted-foreground">Không thể tải thư viện.</p>
-            <Link href="/library" className="text-sm font-medium text-primary hover:underline">
+        <EmptyState
+          icon={RefreshCw}
+          title="Không thể tải thư viện"
+          description="Đã có lỗi khi tải dữ liệu. Vui lòng thử lại."
+          action={
+            <Link
+              href="/library"
+              className="text-sm font-medium px-3 py-1.5 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
+            >
               Thử lại
             </Link>
-          </CardContent>
-        </Card>
+          }
+        />
       ) : result.assets.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center gap-2 py-10 text-center">
-            <LibraryIcon className="size-8 text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">
-              {hasActiveFilters ? "Không có tài sản khớp bộ lọc." : "Chưa có tài sản nào — tạo ảnh hoặc banner đầu tiên."}
-            </p>
-          </CardContent>
-        </Card>
+        <EmptyState
+          icon={LibraryIcon}
+          title={hasActiveFilters ? "Không có tài sản khớp bộ lọc" : "Chưa có tài sản nào"}
+          description={
+            hasActiveFilters
+              ? "Thử điều chỉnh từ khoá hoặc bộ lọc đang chọn."
+              : "Tạo ảnh hoặc banner đầu tiên để bắt đầu xây dựng thư viện."
+          }
+          action={
+            !hasActiveFilters && (
+              <Link
+                href="/create/image"
+                className="text-sm font-medium px-3 py-1.5 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
+              >
+                Tạo ảnh
+              </Link>
+            )
+          }
+        />
       ) : (
         <>
-          <AssetGrid assets={result.assets} />
+          <AssetGrid assets={result.assets} currentUserId={user?.id ?? ""} isAdmin={workspace.role === "admin"} />
           <LibraryPagination page={result.page} totalPages={totalPages} buildHref={buildHref} />
         </>
       )}

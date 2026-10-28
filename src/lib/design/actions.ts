@@ -6,6 +6,8 @@ import { ok, err, type ActionResult } from "@/lib/action-result";
 import { createBannerInputSchema, saveDesignDocumentSchema, exportDesignSchema } from "./schema";
 import { getActiveWorkspace } from "@/lib/workspace/queries";
 import { buildCreativeAssetPath, uploadGeneratedImage, extensionForContentType, resolveSignedAssetUrl } from "@/lib/generation/storage";
+import { downloadBrandAsset } from "@/lib/brand/storage";
+import { readImageDimensions } from "@/lib/generation/image-dimensions";
 import { getTemplates } from "@/lib/brand/queries";
 import { getBrandImageAssets } from "./queries";
 import { trackEvent } from "@/lib/analytics/track";
@@ -100,14 +102,31 @@ export async function createBannerAsset(rawInput: unknown): Promise<ActionResult
   });
 
   if (guideline?.logo_primary_path) {
-    const logoPos = template?.layout.logo ?? { x: 24, y: 24, widthPx: Math.round(preset.width * 0.15) };
+    // Default placement (no template override): 60px from the left/top
+    // edge, 60px tall — measured directly off a reference banner image
+    // the user supplied (Zalopay wordmark logo at 1200x1200: bounding box
+    // x=57-60, y=58-61, height≈60-63px — 60/60/60 is the clean, centered
+    // read of that measurement). Width derived from the logo's REAL
+    // natural dimensions (read from the file bytes — PNG/JPEG/WebP
+    // headers or an SVG's width/height/viewBox, see image-dimensions.ts)
+    // so it never gets stretched into a square. Falls back to a square
+    // only when the real dimensions genuinely can't be read (e.g. a
+    // corrupt file) — never silently guesses a wrong ratio.
+    const LOGO_DEFAULT_HEIGHT_PX = 60;
+    const logoBytes = await downloadBrandAsset(supabase, guideline.logo_primary_path);
+    const naturalSize = logoBytes ? readImageDimensions(logoBytes) : null;
+    const defaultWidth = naturalSize
+      ? Math.round(LOGO_DEFAULT_HEIGHT_PX * (naturalSize.width / naturalSize.height))
+      : LOGO_DEFAULT_HEIGHT_PX;
+
+    const logoPos = template?.layout.logo ?? { x: 60, y: 60, widthPx: defaultWidth };
     layers.push({
       id: newLayerId(),
       type: "logo",
       x: logoPos.x,
       y: logoPos.y,
       width: logoPos.widthPx,
-      height: logoPos.widthPx,
+      height: template?.layout.logo ? logoPos.widthPx : LOGO_DEFAULT_HEIGHT_PX,
       rotation: 0,
       zIndex: 10,
       imagePath: guideline.logo_primary_path,
@@ -130,7 +149,7 @@ export async function createBannerAsset(rawInput: unknown): Promise<ActionResult
       rotation: 0,
       zIndex: 20,
       text: field.label,
-      fontFamily: guideline?.fonts.heading?.family ?? "Inter",
+      fontFamily: guideline?.fonts.heading?.family ?? "Aeonik Pro",
       fontFallback: guideline?.fonts.heading?.fallback ?? "sans-serif",
       fontSize: 32,
       fontWeight: 700,
@@ -277,7 +296,7 @@ export async function saveDesignDocument(rawInput: unknown): Promise<ActionResul
   if (!asset) return err("NOT_FOUND", "Không tìm thấy banner.");
 
   const { data: currentDoc } = asset.current_design_document_id
-    ? await supabase.from("design_documents").select("version, size_preset_id, width, height").eq("id", asset.current_design_document_id).maybeSingle()
+    ? await supabase.from("design_documents").select("version").eq("id", asset.current_design_document_id).maybeSingle()
     : { data: null };
 
   const { data: brand } = await supabase
@@ -291,10 +310,10 @@ export async function saveDesignDocument(rawInput: unknown): Promise<ActionResul
     .insert({
       asset_id: input.assetId,
       version: (currentDoc?.version ?? 0) + 1,
-      size_preset_id: currentDoc?.size_preset_id ?? null,
-      width: currentDoc?.width ?? 0,
-      height: currentDoc?.height ?? 0,
-      document: { layers: input.layers },
+      size_preset_id: input.sizePresetId,
+      width: input.width,
+      height: input.height,
+      document: { layers: input.layers, sizeVariants: input.sizeVariants },
       guideline_version_id: brand?.current_guideline_version_id ?? null,
       created_by: user.id,
     })

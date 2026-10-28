@@ -81,9 +81,71 @@ export async function getGenerationJob(jobId: string): Promise<GenerationJob | n
     height: job.params.height,
     count: job.params.count,
     provider: job.provider,
+    requestedModel: job.requested_model ?? "auto",
+    finalModel: job.final_model,
+    attempts: job.attempts,
     status: job.status,
     error: job.error,
     results,
     createdAt: job.created_at,
   };
+}
+
+export interface GeneratedImageGalleryItem {
+  id: string;
+  thumbnailUrl: string | null;
+  prompt: string | null;
+  width: number | null;
+  height: number | null;
+  requestedModel: string | null;
+  finalModel: string | null;
+  createdAt: string;
+}
+
+/** The Tạo ảnh page's own gallery — every image that came out of a real
+ * generation (source_generation_job_id set), workspace-wide, newest
+ * first. Deliberately separate from getLibraryAssets()/LibraryAssetListItem
+ * (used by Thư viện and Dashboard) rather than extending that shared
+ * type — this page needs prompt/model/size per item for "Tạo biến thể",
+ * which Thư viện's list view has no use for, so adding it there would be
+ * unrelated scope creep onto a shared, already-used type. */
+export async function getGeneratedImageGallery(workspaceId: string, limit = 60): Promise<GeneratedImageGalleryItem[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from("creative_assets")
+    .select("id, storage_path, prompt, width, height, created_at, generation_jobs(requested_model, final_model)")
+    .eq("workspace_id", workspaceId)
+    .eq("type", "image")
+    .not("source_generation_job_id", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (error || !data) {
+    if (error) console.error("[getGeneratedImageGallery]", error);
+    return [];
+  }
+
+  const rows = data as unknown as {
+    id: string;
+    storage_path: string | null;
+    prompt: string | null;
+    width: number | null;
+    height: number | null;
+    created_at: string;
+    generation_jobs: { requested_model: string | null; final_model: string | null } | null;
+  }[];
+
+  return Promise.all(
+    rows.map(async (row) => ({
+      id: row.id,
+      thumbnailUrl: await resolveSignedAssetUrl(supabase, row.storage_path),
+      prompt: row.prompt,
+      width: row.width,
+      height: row.height,
+      requestedModel: row.generation_jobs?.requested_model ?? null,
+      finalModel: row.generation_jobs?.final_model ?? null,
+      createdAt: row.created_at,
+    }))
+  );
 }

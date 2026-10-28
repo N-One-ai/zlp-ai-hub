@@ -1,6 +1,6 @@
 "use client";
 
-import { Image as ImageIcon, Type, Shapes, Lock, Unlock, Trash2, ChevronUp, ChevronDown } from "lucide-react";
+import { Image as ImageIcon, Type, Shapes, Lock, Unlock, Trash2, ChevronUp, ChevronDown, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { ResolvedLayer } from "@/types/design";
@@ -19,6 +19,7 @@ export function LayerPanel({
   selectedId,
   onSelect,
   onToggleLock,
+  onToggleVisible,
   onDelete,
   onReorder,
 }: {
@@ -26,6 +27,7 @@ export function LayerPanel({
   selectedId: string | null;
   onSelect: (id: string) => void;
   onToggleLock: (id: string) => void;
+  onToggleVisible: (id: string) => void;
   onDelete: (id: string) => void;
   onReorder: (id: string, direction: "up" | "down") => void;
 }) {
@@ -69,6 +71,16 @@ export function LayerPanel({
               }}
             >
               <ChevronDown className="size-3" />
+            </Button>
+            <Button
+              size="icon-xs"
+              variant="ghost"
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleVisible(layer.id);
+              }}
+            >
+              {layer.visible === false ? <EyeOff className="size-3" /> : <Eye className="size-3" />}
             </Button>
             <Button
               size="icon-xs"

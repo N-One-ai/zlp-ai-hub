@@ -18,7 +18,12 @@ const layerSchema = z.object({
   rotation: z.number().default(0),
   zIndex: z.number().default(0),
   locked: z.boolean().optional(),
+  visible: z.boolean().optional(),
+  role: z.enum(["tagline", "subtitle"]).optional(),
   imagePath: z.string().optional(),
+  featherPx: z.number().min(0).max(64).optional(),
+  focalX: z.number().min(0).max(1).optional(),
+  focalY: z.number().min(0).max(1).optional(),
   text: z.string().optional(),
   fontFamily: z.string().optional(),
   fontFallback: z.string().optional(),
@@ -35,6 +40,14 @@ const layerSchema = z.object({
 export const saveDesignDocumentSchema = z.object({
   assetId: z.string().uuid(),
   layers: z.array(layerSchema).max(100),
+  sizePresetId: z.string().uuid(),
+  width: z.number().int().min(1),
+  height: z.number().int().min(1),
+  /** Every size variant the user has touched this session, keyed by
+   * size_presets.id — including the active one (duplicated into both
+   * `layers` and here so every reader can keep using the simpler
+   * top-level `layers` field). See DesignDocumentContent. */
+  sizeVariants: z.record(z.string(), z.array(layerSchema).max(100)).default({}),
 });
 export type SaveDesignDocumentInput = z.infer<typeof saveDesignDocumentSchema>;
 

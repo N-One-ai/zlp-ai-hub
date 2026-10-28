@@ -1,4 +1,6 @@
-import type { GenerationJobStatus } from "./database";
+import type { GenerationAttempt, GenerationJobStatus } from "./database";
+
+export type { GenerationAttempt };
 
 export interface GenerationResultItem {
   index: number;
@@ -20,6 +22,9 @@ export interface GenerationJob {
   height: number;
   count: number;
   provider: string;
+  requestedModel: string;
+  finalModel: string | null;
+  attempts: GenerationAttempt[];
   status: GenerationJobStatus;
   error: string | null;
   results: GenerationResultItem[];

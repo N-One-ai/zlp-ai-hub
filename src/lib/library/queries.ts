@@ -101,7 +101,7 @@ export async function getAssetDetail(assetId: string): Promise<LibraryAssetDetai
   const { data, error } = await supabase
     .from("creative_assets")
     .select(
-      "id, type, name, brand_id, campaign, status, owner_id, storage_path, width, height, prompt, tags, created_at, brands(name), profiles(name, email)"
+      "id, type, name, brand_id, campaign, status, owner_id, storage_path, width, height, prompt, tags, created_at, brands(name), profiles(name, email), generation_jobs(requested_model, final_model, params)"
     )
     .eq("id", assetId)
     .maybeSingle();
@@ -127,6 +127,11 @@ export async function getAssetDetail(assetId: string): Promise<LibraryAssetDetai
     created_at: string;
     brands: { name: string } | null;
     profiles: { name: string | null; email: string } | null;
+    generation_jobs: {
+      requested_model: string | null;
+      final_model: string | null;
+      params: { aspectRatio?: string | null; resolution?: string | null } | null;
+    } | null;
   };
 
   let versions: LibraryAssetDetail["versions"] = [];
@@ -157,5 +162,13 @@ export async function getAssetDetail(assetId: string): Promise<LibraryAssetDetai
     tags: row.tags,
     createdAt: row.created_at,
     versions,
+    generation: row.generation_jobs?.requested_model
+      ? {
+          requestedModel: row.generation_jobs.requested_model,
+          finalModel: row.generation_jobs.final_model,
+          aspectRatio: row.generation_jobs.params?.aspectRatio ?? null,
+          resolution: row.generation_jobs.params?.resolution ?? null,
+        }
+      : null,
   };
 }

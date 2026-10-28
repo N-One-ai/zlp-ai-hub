@@ -7,6 +7,16 @@ export function buildCreativeAssetPath(workspaceId: string, brandId: string, ext
   return `${workspaceId}/${brandId}/${crypto.randomUUID()}.${extension}`;
 }
 
+/** A reference image is an INPUT to generation, not a deliverable — it
+ * intentionally lives under its own "_reference" subfolder rather than a
+ * brandId folder, and never gets a creative_assets row, so it never shows
+ * up in Thư viện. Storage RLS on this bucket only checks the first path
+ * segment (workspace_id), so this still passes the existing policy
+ * unchanged — no migration needed. */
+export function buildReferenceImagePath(workspaceId: string, extension: string): string {
+  return `${workspaceId}/_reference/${crypto.randomUUID()}.${extension}`;
+}
+
 /** Same reasoning as lib/brand/storage.ts's resolveSignedUrl: fails
  * closed (null) rather than guessing, and relies on the caller's own
  * RLS-scoped client so a signed URL can never be minted for an object

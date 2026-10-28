@@ -8,6 +8,12 @@
  * wherever a font fails to load at render/export time.
  */
 export const AVAILABLE_FONTS: { family: string; fallback: string }[] = [
+  // Aeonik Pro — Creative Hub's official brand typeface, default choice.
+  // Not a Google Font: rendered via the @font-face rules in globals.css,
+  // which require licensed font files at public/fonts/aeonik-pro/ (see
+  // that folder's README). Falls back to "sans-serif" like every other
+  // entry here if the family fails to load at render/export time.
+  { family: "Aeonik Pro", fallback: "sans-serif" },
   { family: "Inter", fallback: "sans-serif" },
   { family: "Roboto", fallback: "sans-serif" },
   { family: "Open Sans", fallback: "sans-serif" },

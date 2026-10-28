@@ -14,12 +14,26 @@ export function RegisterForm() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [confirmError, setConfirmError] = useState<string | null>(null);
   const [checkEmail, setCheckEmail] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (isPending) return;
+    // Confirm-password is ONLY ever compared against password, never sent
+    // anywhere as its own field — signUp() below still only receives
+    // {name, email, password}, exactly as before this field existed.
+    if (confirmPassword.trim() === "") {
+      setConfirmError("Vui lòng nhập lại mật khẩu.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setConfirmError("Mật khẩu xác nhận không khớp.");
+      return;
+    }
+    setConfirmError(null);
     startTransition(async () => {
       const result = await signUp({ name, email, password });
       if (!result.ok) {
@@ -72,9 +86,27 @@ export function RegisterForm() {
           autoComplete="new-password"
           minLength={6}
           value={password}
-          onChange={(e) => setPassword(e.target.value)}
+          onChange={(e) => {
+            setPassword(e.target.value);
+            if (confirmError) setConfirmError(null);
+          }}
           required
         />
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="confirmPassword">Xác nhận mật khẩu</Label>
+        <Input
+          id="confirmPassword"
+          type="password"
+          autoComplete="new-password"
+          value={confirmPassword}
+          onChange={(e) => {
+            setConfirmPassword(e.target.value);
+            if (confirmError) setConfirmError(null);
+          }}
+          aria-invalid={Boolean(confirmError)}
+        />
+        {confirmError && <p className="text-sm text-destructive">{confirmError}</p>}
       </div>
       <Button type="submit" disabled={isPending} className="mt-1">
         {isPending && <Loader2 className="size-4 animate-spin" />}

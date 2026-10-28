@@ -18,7 +18,7 @@ export function MobileNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 border-t bg-background">
+    <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 border-t border-sidebar-border bg-sidebar">
       <ul className="grid grid-cols-4 items-center">
         {ITEMS.map(({ href, label, icon: Icon }) => {
           const active = pathname === href || pathname.startsWith(`${href}/`);
@@ -30,7 +30,7 @@ export function MobileNav() {
                 aria-current={active ? "page" : undefined}
                 className="flex flex-col items-center gap-0.5 py-2.5 px-3 min-w-11 min-h-11 justify-center"
               >
-                <Icon className={cn("size-5", active ? "text-foreground" : "text-muted-foreground")} />
+                <Icon className={cn("size-5", active ? "text-sidebar-primary" : "text-sidebar-foreground/55")} />
               </a>
             </li>
           );
@@ -39,21 +39,21 @@ export function MobileNav() {
           <Popover>
             <PopoverTrigger
               aria-label="Tạo mới"
-              className="flex items-center justify-center size-11 rounded-full bg-primary text-primary-foreground -translate-y-3 shadow-md"
+              className="flex items-center justify-center size-12 rounded-full bg-gradient-to-br from-primary to-accent text-primary-foreground -translate-y-4 shadow-lg shadow-primary/30"
             >
               <Plus className="size-5" />
             </PopoverTrigger>
             <PopoverContent align="end" side="top" className="w-44 p-1">
               <Link
                 href="/create/image"
-                className="flex items-center gap-2 rounded-md px-2.5 py-2 text-sm hover:bg-accent"
+                className="flex items-center gap-2 rounded-md px-2.5 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
               >
                 <ImageIcon className="size-4" />
                 Tạo ảnh
               </Link>
               <Link
                 href="/create/banner"
-                className="flex items-center gap-2 rounded-md px-2.5 py-2 text-sm hover:bg-accent"
+                className="flex items-center gap-2 rounded-md px-2.5 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
               >
                 <LayoutTemplate className="size-4" />
                 Tạo banner
@@ -68,7 +68,7 @@ export function MobileNav() {
             aria-current={pathname === "/settings" ? "page" : undefined}
             className="flex flex-col items-center gap-0.5 py-2.5 px-3 min-w-11 min-h-11 justify-center"
           >
-            <Settings className={cn("size-5", pathname === "/settings" ? "text-foreground" : "text-muted-foreground")} />
+            <Settings className={cn("size-5", pathname === "/settings" ? "text-sidebar-primary" : "text-sidebar-foreground/55")} />
           </a>
         </li>
       </ul>

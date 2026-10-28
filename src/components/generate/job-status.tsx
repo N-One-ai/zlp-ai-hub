@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { getGenerationJobAction, saveGenerationResult } from "@/lib/generation/actions";
 import { trackEvent } from "@/lib/analytics/track";
+import { modelLabel } from "@/lib/generation/model-meta";
 import type { GenerationJob } from "@/types/generation";
 
 const POLL_INTERVAL_MS = 2000;
@@ -21,6 +22,24 @@ const STATUS_LABEL: Record<GenerationJob["status"], string> = {
   failed: "Thất bại",
   cancelled: "Đã huỷ",
 };
+
+/** Derives a human progress line from the job's fallback attempt history
+ * — "Đang thử X…" for the first attempt, "Model gặp sự cố, đang chuyển
+ * sang Y…" once a prior attempt has failed, "Đã tạo bằng Z" once
+ * succeeded. Pure function of job.attempts/finalModel, no extra state. */
+export function progressLabel(job: GenerationJob): string | null {
+  if (job.status === "succeeded" && job.finalModel) {
+    return `Đã tạo bằng ${modelLabel(job.finalModel)}`;
+  }
+  if (job.attempts.length === 0) return null;
+  const last = job.attempts[job.attempts.length - 1];
+  if (last.status === "started") {
+    return job.attempts.length > 1
+      ? `Model gặp sự cố, đang chuyển sang ${modelLabel(last.model)}…`
+      : `Đang thử ${modelLabel(last.model)}…`;
+  }
+  return null;
+}
 
 /**
  * Polls while the job is queued/processing — even though the current
@@ -83,6 +102,8 @@ export function JobStatus({ initialJob }: { initialJob: GenerationJob }) {
             {job.width}×{job.height}px · {job.count} ảnh
           </span>
         </div>
+
+        {progressLabel(job) && <p className="text-sm text-muted-foreground">{progressLabel(job)}</p>}
 
         {job.status === "failed" && job.error && <p className="text-sm text-destructive">{job.error}</p>}
 

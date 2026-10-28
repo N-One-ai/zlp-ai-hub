@@ -60,8 +60,8 @@ export function BrandGuidelineEditor({
   );
 
   const [colors, setColors] = useState<BrandColor[]>(guideline?.colors ?? []);
-  const [headingFont, setHeadingFont] = useState(toFontValue(guideline?.fonts.heading));
-  const [bodyFont, setBodyFont] = useState(toFontValue(guideline?.fonts.body));
+  const [headingFont, setHeadingFont] = useState(toFontValue(guideline?.fonts.heading) || "Aeonik Pro");
+  const [bodyFont, setBodyFont] = useState(toFontValue(guideline?.fonts.body) || "Aeonik Pro");
 
   const [safeTop, setSafeTop] = useState(guideline?.safeZone.topPx?.toString() ?? "");
   const [safeRight, setSafeRight] = useState(guideline?.safeZone.rightPx?.toString() ?? "");

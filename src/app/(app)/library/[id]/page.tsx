@@ -7,10 +7,16 @@ import { Button } from "@/components/ui/button";
 import { requireActiveWorkspace } from "@/lib/workspace/guards";
 import { getAssetDetail } from "@/lib/library/queries";
 import { getCurrentUser } from "@/lib/workspace/queries";
+import { modelLabel } from "@/lib/generation/model-meta";
 import { DeleteAssetButton } from "@/components/library/delete-asset-button";
 import { DownloadAssetButton } from "@/components/library/download-asset-button";
 
 const STATUS_LABEL = { draft: "Nháp", ready: "Hoàn tất", archived: "Lưu trữ" } as const;
+const STATUS_STYLE = {
+  draft: "bg-warning/15 text-warning",
+  ready: "bg-success/15 text-success",
+  archived: "bg-muted text-muted-foreground",
+} as const;
 const TYPE_LABEL = { image: "Ảnh", banner: "Banner", video: "Video" } as const;
 
 export default async function AssetDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -30,7 +36,7 @@ export default async function AssetDetailPage({ params }: { params: Promise<{ id
 
       <div className="grid lg:grid-cols-[1fr_320px] gap-6">
         <div className="flex flex-col gap-4">
-          <div className="rounded-lg border bg-muted/30 overflow-hidden flex items-center justify-center min-h-64">
+          <div className="rounded-xl border border-border bg-muted/30 overflow-hidden flex items-center justify-center min-h-64">
             {asset.fileUrl ? (
               // eslint-disable-next-line @next/next/no-img-element -- short-lived signed URL
               <img src={asset.fileUrl} alt={asset.name} className="max-w-full max-h-[70vh] object-contain" />
@@ -88,12 +94,37 @@ export default async function AssetDetailPage({ params }: { params: Promise<{ id
                 <dd>{new Date(asset.createdAt).toLocaleDateString("vi-VN")}</dd>
                 <dt className="text-muted-foreground">Trạng thái</dt>
                 <dd>
-                  <Badge variant="secondary">{STATUS_LABEL[asset.status]}</Badge>
+                  <Badge className={`${STATUS_STYLE[asset.status]} border-transparent`}>
+                    {STATUS_LABEL[asset.status]}
+                  </Badge>
                 </dd>
                 {asset.campaign && (
                   <>
                     <dt className="text-muted-foreground">Chiến dịch</dt>
                     <dd>{asset.campaign}</dd>
+                  </>
+                )}
+                {asset.generation && (
+                  <>
+                    <dt className="text-muted-foreground">Model AI</dt>
+                    <dd>
+                      {asset.generation.finalModel && asset.generation.finalModel !== asset.generation.requestedModel ? (
+                        <>
+                          Đã dùng: {modelLabel(asset.generation.finalModel)}{" "}
+                          <span className="text-xs text-muted-foreground">
+                            (ban đầu chọn: {modelLabel(asset.generation.requestedModel)})
+                          </span>
+                        </>
+                      ) : (
+                        modelLabel(asset.generation.finalModel ?? asset.generation.requestedModel)
+                      )}
+                    </dd>
+                  </>
+                )}
+                {asset.generation?.resolution && (
+                  <>
+                    <dt className="text-muted-foreground">Độ phân giải</dt>
+                    <dd className="uppercase">{asset.generation.resolution}</dd>
                   </>
                 )}
               </dl>

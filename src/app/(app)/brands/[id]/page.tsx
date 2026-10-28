@@ -1,10 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { requireWorkspaceAdmin } from "@/lib/workspace/guards";
 import { getBrand, getCurrentGuideline, computeBrandReadiness, getSizePresets, getTemplates } from "@/lib/brand/queries";
-import { BrandReadinessBanner } from "@/components/brand/brand-readiness-banner";
+import { BrandDetailTabs } from "@/components/brand/brand-detail-tabs";
 import { BrandProfileForm } from "@/components/brand/brand-profile-form";
 import { BrandGuidelineEditor } from "@/components/brand/brand-guideline-editor";
 import { SizePresetsManager } from "@/components/brand/size-presets-manager";
@@ -32,33 +31,21 @@ export default async function BrandDetailPage({ params }: { params: Promise<{ id
       </Link>
 
       <div>
-        <h1 className="text-xl font-semibold tracking-tight">{brand.name}</h1>
+        <h1 className="font-heading text-2xl font-bold tracking-tight">{brand.name}</h1>
         <p className="text-sm text-muted-foreground">{brand.description || "Chưa có mô tả."}</p>
       </div>
 
-      <BrandReadinessBanner readiness={readiness} />
-
-      <Tabs defaultValue="profile">
-        <TabsList>
-          <TabsTrigger value="profile">Hồ sơ</TabsTrigger>
-          <TabsTrigger value="guideline">Guideline</TabsTrigger>
-          <TabsTrigger value="presets">Preset kích thước</TabsTrigger>
-          <TabsTrigger value="templates">Mẫu banner</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="profile" className="pt-4">
+      <BrandDetailTabs
+        readiness={readiness}
+        profile={
           <Card>
             <CardContent>
               <BrandProfileForm workspaceId={workspace.workspaceId} brand={brand} avatarUrl={brand.avatarUrl} />
             </CardContent>
           </Card>
-        </TabsContent>
-
-        <TabsContent value="guideline" className="pt-4">
-          <BrandGuidelineEditor workspaceId={workspace.workspaceId} brandId={brand.id} guideline={guideline} />
-        </TabsContent>
-
-        <TabsContent value="presets" className="pt-4">
+        }
+        guideline={<BrandGuidelineEditor workspaceId={workspace.workspaceId} brandId={brand.id} guideline={guideline} />}
+        presets={
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Preset kích thước (dùng chung cho toàn workspace)</CardTitle>
@@ -67,9 +54,8 @@ export default async function BrandDetailPage({ params }: { params: Promise<{ id
               <SizePresetsManager workspaceId={workspace.workspaceId} presets={presets} />
             </CardContent>
           </Card>
-        </TabsContent>
-
-        <TabsContent value="templates" className="pt-4">
+        }
+        templates={
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Mẫu banner của {brand.name}</CardTitle>
@@ -78,8 +64,8 @@ export default async function BrandDetailPage({ params }: { params: Promise<{ id
               <TemplatesManager brandId={brand.id} templates={templates} presets={presets} />
             </CardContent>
           </Card>
-        </TabsContent>
-      </Tabs>
+        }
+      />
     </div>
   );
 }
