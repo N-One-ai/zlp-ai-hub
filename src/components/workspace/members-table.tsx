@@ -1,14 +1,13 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, MoreVertical, Search, ShieldOff, Users2 } from "lucide-react";
+import { AlertTriangle, Loader2, MoreVertical, Search, ShieldOff, Users2 } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,8 +28,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { updateMemberRole, revokeMember } from "@/lib/workspace/actions";
-import type { MemberWithProfile } from "@/types/workspace";
+import { PaginationControls } from "@/components/workspace/pagination-controls";
+import { updateMemberRole, revokeMember, searchWorkspaceMembersAction } from "@/lib/workspace/actions";
+import type { MemberWithProfile, PaginatedResult } from "@/types/workspace";
 import type { MembershipRole, MembershipStatus } from "@/types/database";
 
 const STATUS_LABEL: Record<MembershipStatus, string> = {
@@ -48,16 +48,14 @@ const STATUS_BADGE_CLASS: Record<MembershipStatus, string> = {
 const ROLE_LABEL: Record<MembershipRole, string> = { admin: "Admin", creator: "Creator", viewer: "Viewer" };
 const ROLE_ORDER: MembershipRole[] = ["admin", "creator", "viewer"];
 
+/** Debounce delay for re-querying the backend as the user types. */
+const SEARCH_DEBOUNCE_MS = 300;
+
 function roleBadgeVariant(role: MembershipRole) {
   if (role === "admin") return "default" as const;
   if (role === "creator") return "secondary" as const;
   return "outline" as const;
 }
-
-const ALL = "__all__";
-/** Below this count, search + filters add clutter without helping — the
- * whole list is already visible at a glance. */
-const FILTER_THRESHOLD = 8;
 
 function initialOf(name: string | null, email: string) {
   return (name || email).charAt(0).toUpperCase();
@@ -105,35 +103,83 @@ function MemberActions({
   );
 }
 
-export function MembersTable({ members, currentUserId }: { members: MemberWithProfile[]; currentUserId: string }) {
+export function MembersTable({
+  workspaceId,
+  currentUserId,
+  initialResult,
+}: {
+  workspaceId: string;
+  currentUserId: string;
+  initialResult: PaginatedResult<MemberWithProfile>;
+}) {
   const router = useRouter();
-  const [isPending, startTransition] = useTransition();
+  const [isActionPending, startActionTransition] = useTransition();
+  const [isSearching, setIsSearching] = useState(false);
   const [search, setSearch] = useState("");
-  const [roleFilter, setRoleFilter] = useState<string>(ALL);
-  const [statusFilter, setStatusFilter] = useState<string>(ALL);
+  const [page, setPage] = useState(1);
+  const [result, setResult] = useState(initialResult);
+  // The search term that actually produced `result` — kept separate from
+  // the live `search` input so empty/no-results messaging reflects what's
+  // on screen, not what's mid-keystroke/mid-debounce. Using the live input
+  // for this caused a flash of the wrong empty state (e.g. "no members at
+  // all") for the ~300ms between clearing the box and the debounced
+  // re-fetch landing.
+  const [committedSearch, setCommittedSearch] = useState("");
+  const [loadError, setLoadError] = useState(false);
   const [revokeTarget, setRevokeTarget] = useState<MemberWithProfile | null>(null);
+  const requestId = useRef(0);
 
-  const showToolbar = members.length > FILTER_THRESHOLD;
+  async function load(nextSearch: string, nextPage: number) {
+    const id = ++requestId.current;
+    setIsSearching(true);
+    const res = await searchWorkspaceMembersAction(workspaceId, { search: nextSearch, page: nextPage });
+    if (id !== requestId.current) return; // superseded by a newer request
+    setIsSearching(false);
+    if (!res.ok) {
+      setLoadError(true);
+      return;
+    }
+    setLoadError(false);
+    // Page became empty after a mutation/search narrowed the result set —
+    // clamp back to the last valid page instead of showing a stuck blank page.
+    if (res.data.items.length === 0 && res.data.total > 0 && nextPage > 1) {
+      const lastPage = Math.max(1, Math.ceil(res.data.total / res.data.pageSize));
+      setPage(lastPage);
+      await load(nextSearch, lastPage);
+      return;
+    }
+    setResult(res.data);
+    setCommittedSearch(nextSearch);
+  }
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return members.filter((m) => {
-      if (roleFilter !== ALL && m.role !== roleFilter) return false;
-      if (statusFilter !== ALL && m.status !== statusFilter) return false;
-      if (q && !(m.name || "").toLowerCase().includes(q) && !m.email.toLowerCase().includes(q)) return false;
-      return true;
-    });
-  }, [members, search, roleFilter, statusFilter]);
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      setPage(1);
+      void load(search, 1);
+    }, SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
+
+  function handlePageChange(nextPage: number) {
+    setPage(nextPage);
+    void load(search, nextPage);
+  }
+
+  function refetch() {
+    void load(search, page);
+  }
 
   function handleRoleChange(membershipId: string, role: MembershipRole) {
-    const target = members.find((m) => m.membershipId === membershipId);
-    startTransition(async () => {
-      const result = await updateMemberRole(membershipId, role);
-      if (!result.ok) {
-        toast.error(result.error.message);
+    const target = result.items.find((m) => m.membershipId === membershipId);
+    startActionTransition(async () => {
+      const res = await updateMemberRole(membershipId, role);
+      if (!res.ok) {
+        toast.error(res.error.message);
         return;
       }
       toast.success(`Đã đổi vai trò của ${target?.name || target?.email || "thành viên"} thành ${ROLE_LABEL[role]}.`);
+      refetch();
       router.refresh();
     });
   }
@@ -141,91 +187,63 @@ export function MembersTable({ members, currentUserId }: { members: MemberWithPr
   function confirmRevoke() {
     if (!revokeTarget) return;
     const target = revokeTarget;
-    startTransition(async () => {
-      const result = await revokeMember(target.membershipId);
-      if (!result.ok) {
-        toast.error(result.error.message);
+    startActionTransition(async () => {
+      const res = await revokeMember(target.membershipId);
+      if (!res.ok) {
+        toast.error(res.error.message);
         setRevokeTarget(null);
         return;
       }
       toast.success(`Đã thu hồi quyền truy cập của ${target.name || target.email}.`);
       setRevokeTarget(null);
+      refetch();
       router.refresh();
     });
   }
 
-  const hasActiveFilters = search.trim() !== "" || roleFilter !== ALL || statusFilter !== ALL;
-
-  function clearFilters() {
-    setSearch("");
-    setRoleFilter(ALL);
-    setStatusFilter(ALL);
-  }
-
-  if (members.length === 0) {
-    return (
-      <div className="flex flex-col items-center gap-2 py-10 text-center">
-        <Users2 className="size-8 text-muted-foreground/50" />
-        <p className="text-sm text-muted-foreground">Chưa có thành viên nào trong workspace.</p>
-      </div>
-    );
-  }
+  const isBusy = isActionPending || isSearching;
+  const hasSearch = committedSearch.trim() !== "";
+  const showToolbar = result.total > 0 || hasSearch;
 
   return (
     <div className="flex flex-col gap-4">
       {showToolbar && (
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <div className="relative flex-1 min-w-48">
-            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Tìm theo tên hoặc email..."
-              className="pl-9"
-              aria-label="Tìm thành viên"
-            />
-          </div>
-          <Select value={roleFilter} onValueChange={(v) => setRoleFilter(v ?? ALL)}>
-            <SelectTrigger className="w-full sm:w-32" aria-label="Lọc theo vai trò">
-              <SelectValue placeholder="Vai trò" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>Mọi vai trò</SelectItem>
-              {ROLE_ORDER.map((role) => (
-                <SelectItem key={role} value={role}>
-                  {ROLE_LABEL[role]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v ?? ALL)}>
-            <SelectTrigger className="w-full sm:w-36" aria-label="Lọc theo trạng thái">
-              <SelectValue placeholder="Trạng thái" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>Mọi trạng thái</SelectItem>
-              {(Object.keys(STATUS_LABEL) as MembershipStatus[]).map((status) => (
-                <SelectItem key={status} value={status}>
-                  {STATUS_LABEL[status]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <div className="relative max-w-sm">
+          <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Tìm theo tên hoặc email..."
+            className="pl-9"
+            aria-label="Tìm thành viên"
+          />
         </div>
       )}
 
-      {filtered.length === 0 ? (
+      {loadError ? (
         <div className="flex flex-col items-center gap-2 py-10 text-center">
-          <Search className="size-8 text-muted-foreground/50" />
-          <p className="text-sm text-muted-foreground">Không tìm thấy thành viên phù hợp.</p>
-          {hasActiveFilters && (
-            <Button size="sm" variant="outline" onClick={clearFilters}>
-              Xoá bộ lọc
-            </Button>
+          <AlertTriangle className="size-8 text-destructive/60" />
+          <p className="text-sm text-muted-foreground">Không tải được danh sách thành viên.</p>
+          <Button size="sm" variant="outline" onClick={refetch}>
+            Thử lại
+          </Button>
+        </div>
+      ) : result.items.length === 0 ? (
+        <div className="flex flex-col items-center gap-2 py-10 text-center">
+          {hasSearch ? (
+            <>
+              <Search className="size-8 text-muted-foreground/50" />
+              <p className="text-sm text-muted-foreground">Không tìm thấy thành viên phù hợp.</p>
+            </>
+          ) : (
+            <>
+              <Users2 className="size-8 text-muted-foreground/50" />
+              <p className="text-sm text-muted-foreground">Chưa có thành viên nào trong workspace.</p>
+            </>
           )}
         </div>
       ) : (
-        <>
+        <div className={isBusy ? "opacity-60 transition-opacity" : "transition-opacity"}>
           {/* Desktop: table */}
           <div className="hidden md:block">
             <table className="w-full text-sm">
@@ -239,7 +257,7 @@ export function MembersTable({ members, currentUserId }: { members: MemberWithPr
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {filtered.map((m) => {
+                {result.items.map((m) => {
                   const isSelf = m.userId === currentUserId;
                   const isRevoked = m.status === "revoked";
                   return (
@@ -278,7 +296,7 @@ export function MembersTable({ members, currentUserId }: { members: MemberWithPr
                         {!isSelf && !isRevoked && (
                           <MemberActions
                             member={m}
-                            isPending={isPending}
+                            isPending={isActionPending}
                             onRoleChange={handleRoleChange}
                             onRequestRevoke={setRevokeTarget}
                           />
@@ -293,7 +311,7 @@ export function MembersTable({ members, currentUserId }: { members: MemberWithPr
 
           {/* Mobile: stacked cards */}
           <div className="flex flex-col gap-2 md:hidden">
-            {filtered.map((m) => {
+            {result.items.map((m) => {
               const isSelf = m.userId === currentUserId;
               const isRevoked = m.status === "revoked";
               return (
@@ -320,7 +338,7 @@ export function MembersTable({ members, currentUserId }: { members: MemberWithPr
                     {!isSelf && !isRevoked && (
                       <MemberActions
                         member={m}
-                        isPending={isPending}
+                        isPending={isActionPending}
                         onRoleChange={handleRoleChange}
                         onRequestRevoke={setRevokeTarget}
                       />
@@ -341,7 +359,17 @@ export function MembersTable({ members, currentUserId }: { members: MemberWithPr
               );
             })}
           </div>
-        </>
+        </div>
+      )}
+
+      {!loadError && (
+        <PaginationControls
+          page={result.page}
+          pageSize={result.pageSize}
+          total={result.total}
+          onPageChange={handlePageChange}
+          disabled={isBusy}
+        />
       )}
 
       <AlertDialog open={revokeTarget !== null} onOpenChange={(open) => !open && setRevokeTarget(null)}>
@@ -354,13 +382,13 @@ export function MembersTable({ members, currentUserId }: { members: MemberWithPr
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={isPending}>Huỷ</AlertDialogCancel>
+            <AlertDialogCancel disabled={isActionPending}>Huỷ</AlertDialogCancel>
             <AlertDialogAction
               onClick={confirmRevoke}
-              disabled={isPending}
+              disabled={isActionPending}
               className="bg-destructive text-white hover:bg-destructive/90"
             >
-              {isPending ? <Loader2 className="size-4 animate-spin" /> : null}
+              {isActionPending ? <Loader2 className="size-4 animate-spin" /> : null}
               Thu hồi
             </AlertDialogAction>
           </AlertDialogFooter>

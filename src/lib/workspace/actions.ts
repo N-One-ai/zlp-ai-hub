@@ -4,8 +4,9 @@ import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { ok, err, type ActionResult } from "@/lib/action-result";
-import { ACTIVE_WORKSPACE_COOKIE, getMyWorkspaces } from "./queries";
+import { ACTIVE_WORKSPACE_COOKIE, getMyWorkspaces, searchWorkspaceMembers, searchUnassignedUsers } from "./queries";
 import type { MembershipRole } from "@/types/database";
+import type { MemberWithProfile, UnassignedUser, PaginatedResult } from "@/types/workspace";
 
 const GENERIC_ERROR = "Đã có lỗi xảy ra. Vui lòng thử lại.";
 
@@ -98,4 +99,43 @@ export async function revokeMember(membershipId: string): Promise<ActionResult<n
 
   revalidatePath("/members");
   return ok(null);
+}
+
+/** Re-checks the caller actually admins this exact workspace before
+ * either of the two search actions below run — the underlying RPCs
+ * (migration 0009) independently re-verify this themselves too (same
+ * belt-and-suspenders convention as every other privileged action in
+ * this app), but checking here first gives a clean FORBIDDEN instead of
+ * a raw Postgres error message leaking to the client. */
+async function assertWorkspaceAdmin(workspaceId: string): Promise<ActionResult<null>> {
+  const workspaces = await getMyWorkspaces();
+  const membership = workspaces.find((w) => w.workspaceId === workspaceId);
+  if (!membership || membership.role !== "admin") {
+    return err("FORBIDDEN", "Bạn không có quyền xem danh sách thành viên của workspace này.");
+  }
+  return ok(null);
+}
+
+/** Thin "use server" wrapper so the Members page's Client Component can
+ * re-fetch a page/search of existing members without a full page
+ * navigation — same pattern as getGenerationJobAction in
+ * lib/generation/actions.ts. */
+export async function searchWorkspaceMembersAction(
+  workspaceId: string,
+  options: { search?: string; page?: number }
+): Promise<ActionResult<PaginatedResult<MemberWithProfile>>> {
+  const guard = await assertWorkspaceAdmin(workspaceId);
+  if (!guard.ok) return guard;
+  return ok(await searchWorkspaceMembers(workspaceId, options));
+}
+
+/** Same as searchWorkspaceMembersAction, for the "chưa thuộc workspace"
+ * list. */
+export async function searchUnassignedUsersAction(
+  workspaceId: string,
+  options: { search?: string; page?: number }
+): Promise<ActionResult<PaginatedResult<UnassignedUser>>> {
+  const guard = await assertWorkspaceAdmin(workspaceId);
+  if (!guard.ok) return guard;
+  return ok(await searchUnassignedUsers(workspaceId, options));
 }

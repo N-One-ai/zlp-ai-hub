@@ -101,7 +101,12 @@ export async function generateImages(rawInput: unknown): Promise<ActionResult<{ 
   // prompt never creates a job row at all.
   const chain = (() => {
     const resolved = resolveModelChain(input.model);
-    return resolved.length > 0 ? resolved : ["demo"]; // only reached when zero real models are configured at all
+    const bounded = resolved.length > 0 ? resolved : ["demo"]; // only reached when zero real models are configured at all
+    // singleModelOnly: keep only the first (requested) model — never let
+    // a failure quietly retry on a different model whose params/
+    // reference-image support may not match what this specific request
+    // actually needs (see schema.ts's own doc comment on this field).
+    return input.singleModelOnly ? [bounded[0]] : bounded;
   })();
   const firstModel = getModel(chain[0]);
   if (input.prompt.length > firstModel.capabilities.maxPromptLength) {

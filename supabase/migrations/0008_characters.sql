@@ -46,6 +46,50 @@ create table if not exists public.characters (
   updated_at        timestamptz not null default now()
 );
 
+-- Belt-and-suspenders, same rationale as the character_view constraint
+-- widening further down this file: `create table if not exists` only ever
+-- runs the CREATE once — if `characters` already exists on this database
+-- (e.g. an earlier partial run of this exact migration, interrupted or
+-- edited before every column made it in), re-running this file silently
+-- does nothing to add whatever columns are still missing, and every
+-- INSERT then fails with PostgREST's "Could not find the 'x' column of
+-- 'characters' in the schema cache" (code PGRST204) — confirmed live:
+-- this is exactly what broke character creation in production, where
+-- `age` specifically was missing. Each ADD COLUMN below is IF NOT EXISTS
+-- and matches the CREATE TABLE definition above exactly, so re-running
+-- this migration now self-heals a table in that state regardless of
+-- which column(s) it's missing, without touching a table that already
+-- has them all.
+alter table public.characters add column if not exists workspace_id uuid references public.workspaces(id) on delete cascade;
+alter table public.characters add column if not exists created_by uuid references public.profiles(id) on delete cascade;
+alter table public.characters add column if not exists display_name text not null default '';
+alter table public.characters add column if not exists tag_name text;
+alter table public.characters add column if not exists gender text not null default 'female';
+alter table public.characters add column if not exists ethnicity text not null default 'vietnamese';
+alter table public.characters add column if not exists age integer not null default 22;
+alter table public.characters add column if not exists face_source text;
+alter table public.characters add column if not exists face_storage_path text;
+alter table public.characters add column if not exists face_locked boolean not null default false;
+alter table public.characters add column if not exists consent_confirmed boolean not null default false;
+alter table public.characters add column if not exists created_at timestamptz not null default now();
+alter table public.characters add column if not exists updated_at timestamptz not null default now();
+
+-- Same self-healing rationale as the ADD COLUMNs above — DROP+ADD so a
+-- table left over from a partial run also ends up with the exact same
+-- CHECK constraints the CREATE TABLE above declares, not just the columns.
+alter table public.characters drop constraint if exists characters_gender_check;
+alter table public.characters add constraint characters_gender_check check (gender in ('male', 'female'));
+alter table public.characters drop constraint if exists characters_ethnicity_check;
+alter table public.characters add constraint characters_ethnicity_check check (ethnicity in ('vietnamese', 'asian', 'european'));
+alter table public.characters drop constraint if exists characters_age_check;
+alter table public.characters add constraint characters_age_check check (age between 12 and 80);
+alter table public.characters drop constraint if exists characters_face_source_check;
+alter table public.characters add constraint characters_face_source_check check (face_source in ('upload', 'ai'));
+alter table public.characters alter column tag_name set not null;
+alter table public.characters alter column face_source set not null;
+alter table public.characters alter column workspace_id set not null;
+alter table public.characters alter column created_by set not null;
+
 create index if not exists idx_characters_workspace on public.characters (workspace_id, created_at desc);
 
 -- Tag uniqueness is per-workspace, case-insensitive — "@nhanvatnu" and
@@ -108,15 +152,23 @@ create policy "owner or admin deletes characters" on public.characters
 -- anywhere — see README's Character Builder section for why a close-up
 -- is its own view rather than folded into "front".
 alter table public.generation_jobs add column if not exists character_id uuid references public.characters(id) on delete set null;
-alter table public.generation_jobs add column if not exists character_view text check (character_view in ('portrait', 'front', 'side', 'back'));
+alter table public.generation_jobs add column if not exists character_view text check (character_view in ('portrait', 'portrait_side', 'portrait_profile', 'portrait_detail', 'front', 'side', 'back', 'composite'));
 alter table public.generation_jobs add column if not exists character_sheet_id uuid;
 
--- Belt-and-suspenders for anyone who DID already run the first version of
+-- Belt-and-suspenders for anyone who DID already run an earlier version of
 -- this migration before this update landed: widen the check constraint in
--- place instead of silently leaving "portrait" rejected by a stale rule.
+-- place instead of silently leaving a value rejected by a stale rule.
+-- "composite" (added alongside the sheet-compositing feature) is a
+-- synthetic row createCharacterSheet() inserts directly — never generated
+-- by a model — holding the single merged character-sheet image built
+-- server-side from the real generated-view jobs; see compose-sheet.ts.
+-- "portrait_side"/"portrait_profile"/"portrait_detail" (added alongside
+-- the 6-view, 16:9 reference-layout redesign) replace the old single
+-- "side" full-body angle with 4 distinct close-up/expression shots;
+-- "side" itself stays accepted here only for legacy rows.
 alter table public.generation_jobs drop constraint if exists generation_jobs_character_view_check;
 alter table public.generation_jobs add constraint generation_jobs_character_view_check
-  check (character_view in ('portrait', 'front', 'side', 'back'));
+  check (character_view in ('portrait', 'portrait_side', 'portrait_profile', 'portrait_detail', 'front', 'side', 'back', 'composite'));
 
 create index if not exists idx_generation_jobs_character on public.generation_jobs (character_id, created_at desc);
 create index if not exists idx_generation_jobs_sheet on public.generation_jobs (character_sheet_id);

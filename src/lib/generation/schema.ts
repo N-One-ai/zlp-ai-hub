@@ -45,6 +45,15 @@ export const generateImageInputSchema = z
     presetId: z.string().uuid().optional(),
     count: z.number().int().min(1).max(4).default(1),
     model: z.string().trim().min(1).default("auto"),
+    // When true, generateImages() never appends the normal fallback chain
+    // behind `model` — a failure is reported as-is instead of silently
+    // retried on a different model. For requests whose exact params
+    // (e.g. aspect_ratio: "16:9", a 2-image face+outfit reference) are
+    // only confirmed supported by the ONE model actually chosen — falling
+    // back to another model would silently drop those params instead of
+    // honestly failing (see Character Builder's single-call contact-sheet
+    // mode in character-actions.ts, the first caller of this flag).
+    singleModelOnly: z.boolean().default(false),
     // A signed URL to a reference image already uploaded to our own
     // Storage (see uploadReferenceImage in actions.ts) — never an
     // arbitrary client-supplied URL, so the server never fetches

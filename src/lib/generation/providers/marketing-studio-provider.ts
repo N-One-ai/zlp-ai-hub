@@ -67,7 +67,15 @@ const BASE_URL = "https://api.higgsfield.ai";
 const SUBMIT_PATH = "/marketing-studio/image";
 export const MARKETING_STUDIO_PRESETS_PATH = "/marketing-studio/image/presets";
 const POLL_INTERVAL_MS = 2_000;
-const POLL_TIMEOUT_MS = 60_000; // 4k generations ran noticeably slower than Soul's 720p in live testing
+// Raised from the original 60s after live testing (2026-11-10, Character
+// Builder feature): across ~8 real submissions in that session, the
+// endpoint timed out on its FIRST attempt 100% of the time and only
+// completed on a later retry/different request — 60s was consistently
+// too short in practice, not just for 4k. 120s still fits well inside
+// this app's own request budget (no background worker — generateImages()
+// runs synchronously within one Server Action call) without starving the
+// rest of a multi-view character sheet.
+const POLL_TIMEOUT_MS = 120_000;
 const MAX_REFERENCE_IMAGES = 2;
 
 interface SubmitResponse {

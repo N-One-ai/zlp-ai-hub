@@ -7,8 +7,8 @@ import { ok, err, type ActionResult } from "@/lib/action-result";
 import { getActiveWorkspace } from "@/lib/workspace/queries";
 import { generateImages } from "./actions";
 import { buildCharacterFacePath, extensionForContentType, resolveSignedAssetUrl, uploadGeneratedImage } from "./storage";
+import { getModel, resolveModelChain } from "./providers";
 import {
-  CHARACTER_VIEWS,
   CHARACTER_MIN_AGE,
   CHARACTER_MAX_AGE,
   type CharacterView,
@@ -24,19 +24,32 @@ const GENERIC_ERROR = "Đã có lỗi xảy ra. Vui lòng thử lại.";
 const UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
 const UPLOAD_ALLOWED_TYPES = ["image/png", "image/jpeg", "image/webp"];
 const POSTGRES_UNIQUE_VIOLATION = "23505";
+const POSTGRES_TABLE_MISSING = "42P01";
+// PostgREST's own "schema cache" error family — distinct from a real
+// Postgres error code. PGRST205 = the table itself isn't in the cache
+// (table truly missing, or the cache is stale right after a migration
+// just ran); PGRST204 = the table IS in the cache but a specific column
+// isn't — confirmed live in this exact app: `characters` existed (an
+// earlier, partial run of migration 0008_characters.sql before every
+// ADD COLUMN made it in — see that file's own "belt-and-suspenders"
+// comment) but was missing `age`, and every character creation failed
+// with "Không thể tạo nhân vật. Vui lòng thử lại." and no indication why.
+// Both mean the live `characters` table doesn't match this file's own
+// schema — the fix is the SAME re-run of 0008 either way, now self-
+// healing regardless of which column(s) are missing.
+function describeCharactersTableError(insertError: { code?: string | null; message?: string | null } | null): string {
+  if (insertError?.code === POSTGRES_TABLE_MISSING || insertError?.code === "PGRST205") {
+    return "Chưa thể tạo nhân vật — bảng dữ liệu `characters` chưa tồn tại. Cần chạy migration 0008_characters.sql trên Supabase trước.";
+  }
+  if (insertError?.code === "PGRST204") {
+    return `Chưa thể tạo nhân vật — cấu trúc bảng \`characters\` trên Supabase thiếu cột dữ liệu (${insertError.message ?? "không rõ cột nào"}). Cần chạy lại migration 0008_characters.sql (đã cập nhật để tự bổ sung cột còn thiếu) trên Supabase SQL Editor.`;
+  }
+  return "Không thể tạo nhân vật. Vui lòng thử lại.";
+}
 const MAX_APPEARANCE_LENGTH = 600;
 const MAX_OUTFIT_LENGTH = 400;
 const MAX_STYLE_LENGTH = 200;
 const MAX_NEGATIVE_PROMPT_LENGTH = 500; // mirrors schema.ts's negativePrompt limit for the main Tạo ảnh flow
-// Only Higgsfield Marketing Studio accepts more than one reference image
-// in this app's adapters (see providers/marketing-studio-provider.ts,
-// which reads `referenceImageUrls`; every other provider only reads the
-// singular `referenceImageUrl` — see providers/higgsfield-provider.ts and
-// gemini/openai's describeAdjustments). A chosen outfit reference image is
-// only ever actually sent when this exact model is selected; otherwise
-// it's silently dropped from the REQUEST (never from the UI's own
-// disclosure — see character-builder.tsx's note next to the picker).
-const MARKETING_STUDIO_MODEL_ID = "higgsfield-marketing-studio";
 const STYLE_IDS = ["photo", "illustration", "cartoon", "cinematic", "editorial", "custom"] as const;
 const GENDER_IDS = ["male", "female"] as const;
 const ETHNICITY_IDS = ["vietnamese", "asian", "european"] as const;
@@ -88,39 +101,52 @@ function genderSubjectPhrase(gender: CharacterGender, ethnicity: CharacterEthnic
 }
 
 /**
- * Builds the turnaround-sheet prompt for one view angle. The pose set
- * itself (portrait/front/side/back) is fixed, product-defined — the point
- * of a "character sheet" is a consistent reference across angles, not an
- * arbitrary scene. Everything else (style phrase, appearance description,
- * active outfit description) is real, user-chosen input folded in
- * verbatim, never a cosmetic-only UI toggle with no effect on the actual
- * request sent to generateImages().
+ * Builds the prompt for ONE contact-sheet image containing all 6 angles —
+ * a single request to the model, never 6 separate generations. The 6-cell
+ * layout (2 large full-body cells + 4 portrait cells) is fixed,
+ * product-defined; everything else (style phrase, appearance description,
+ * outfit description) is real, user-chosen input folded in verbatim.
+ *
+ * No model this app integrates with has a native "contact sheet" or
+ * "multi-panel layout" parameter (confirmed by reading every adapter in
+ * providers/ — each is a plain text/image-to-image endpoint) — the grid
+ * can only be requested via an explicit, highly literal prompt
+ * description, with no guarantee the model actually honors all 6 cells,
+ * their exact positions, or keeps every cell non-overlapping. This is
+ * disclosed to the user (see the status line in character-builder.tsx)
+ * rather than assumed.
  */
-function buildCharacterSheetPrompt(
+function buildContactSheetPrompt(
   gender: CharacterGender,
   ethnicity: CharacterEthnicity,
   age: number,
-  view: CharacterView,
   stylePhrase: string,
   appearanceDescription: string,
-  outfitDescription: string
+  outfitDescription: string,
+  hasOutfitImageReference: boolean
 ): string {
   const subject = genderSubjectPhrase(gender, ethnicity, age);
-  const base = `Ảnh của ${subject}, khuôn mặt giống hệt ảnh tham chiếu đính kèm, kiểu tóc nhất quán xuyên suốt các góc chụp, nền phông trường quay màu xám nhạt trơn, ánh sáng studio đều, bố cục sạch.`;
-  const viewSuffix: Record<CharacterView, string> = {
-    portrait: "Góc chụp: chân dung cận mặt, từ vai trở lên, nhìn thẳng vào máy ảnh.",
-    front: "Góc chụp: toàn thân, chính diện, nhìn thẳng vào máy ảnh.",
-    side: "Góc chụp: toàn thân, nghiêng 3/4 bên trái.",
-    back: "Góc chụp: toàn thân, từ phía sau.",
-  };
+  // Negative prompts are never sent to either real provider in this app
+  // (Higgsfield Soul and Marketing Studio both report
+  // supportsNegativePrompt: false — see their describeAdjustments), so
+  // every constraint has to live in this positive prompt text.
+  const identityRef = hasOutfitImageReference ? "ảnh tham chiếu THỨ NHẤT (khuôn mặt)" : "ảnh tham chiếu đính kèm";
+  const intro = `Tạo MỘT bức ảnh contact sheet (character sheet) DUY NHẤT, tỷ lệ khung hình 16:9, nền TRẮNG tinh liền mạch trên toàn bộ khung hình, không viền dày, không chữ, không nhãn, không watermark, không logo. Ảnh chia thành một lưới rõ ràng gồm ĐÚNG 6 ô, các ô tách biệt nhau bằng khoảng trắng, không chồng lấn lên nhau.`;
+  const layout = `Bố cục lưới không đều gồm đúng 6 ô, đánh số từ trái sang phải: ô 1 là ảnh TOÀN THÂN CHÍNH DIỆN (thấy đủ từ đỉnh đầu đến bàn chân, không bị cắt mất đầu hoặc chân), ô 2 là ảnh TOÀN THÂN TỪ PHÍA SAU (cũng thấy đủ từ đầu đến chân), ô 3 là CHÂN DUNG CẬN MẶT CHÍNH DIỆN (thấy đầu và vai, nhìn thẳng vào máy ảnh), ô 4 là CHÂN DUNG GÓC 3/4 (thấy đầu và vai, mặt xoay chéo khoảng 45 độ). Hai ô cuối cùng bên phải PHẢI là khung hình NGANG (landscape), rộng hơn là cao, khác hẳn khung dọc của 4 ô trước — ô 5 là CHÂN DUNG GÓC NGHIÊNG RÕ (profile hoặc gần-profile), cắt từ vai/ngực trở lên, KHÔNG phải ảnh toàn thân; ô 6 là CẬN MẶT CỰC GẦN, chính diện, khuôn mặt chiếm phần lớn khung hình (giống kiểu crop macro cận mặt), có thể thấy một phần tóc và tai nhưng KHÔNG được cắt mất trán hoặc cằm, và KHÔNG để thân người, trang phục hay nền chiếm diện tích đáng kể trong ô này. Không lặp lại cùng một góc chụp ở hai ô khác nhau.`;
+  const identity = `Cả 6 ô đều là CÙNG MỘT NGƯỜI: ${subject}, khuôn mặt giống hệt ${identityRef}, cùng độ tuổi trưởng thành, cùng kiểu tóc, cùng vóc dáng, cùng trang phục, cùng màu sắc và phụ kiện — không được đổi khác giữa các ô. Ánh sáng studio đều, chuyên nghiệp, giống nhau ở mọi ô.`;
+  const outfitImageInstruction = hasOutfitImageReference
+    ? "Ảnh tham chiếu THỨ HAI chỉ dùng để lấy thông tin TRANG PHỤC: kiểu dáng, màu sắc, họa tiết, chất liệu và phụ kiện của bộ trang phục trong ảnh đó — giữ đúng các chi tiết này ở cả 6 ô. Tuyệt đối KHÔNG lấy khuôn mặt, người mẫu, tư thế, nền hay bố cục từ ảnh tham chiếu thứ hai; khuôn mặt, danh tính và nền trắng của ảnh kết quả luôn theo ảnh tham chiếu thứ nhất và các chỉ dẫn ở trên."
+    : null;
   const appearance = appearanceDescription.trim();
   const outfit = outfitDescription.trim();
   return [
-    base,
+    intro,
+    layout,
+    identity,
     stylePhrase ? `Phong cách: ${stylePhrase}.` : null,
     appearance ? `Ngoại hình: ${appearance}.` : null,
     outfit ? `Trang phục: ${outfit}.` : null,
-    viewSuffix[view],
+    outfitImageInstruction,
   ]
     .filter(Boolean)
     .join(" ");
@@ -136,7 +162,7 @@ function buildAiFacePrompt(
   const subject = genderSubjectPhrase(gender, ethnicity, age);
   const appearance = appearanceDescription.trim();
   return [
-    `Ảnh chân dung cận mặt của ${subject}, nhìn thẳng vào máy ảnh, biểu cảm trung tính, nền trơn màu xám nhạt, ánh sáng studio chuyên nghiệp, chỉ một người duy nhất trong khung hình.`,
+    `Một bức ảnh DUY NHẤT: ảnh chân dung cận mặt của ${subject}, nhìn thẳng vào máy ảnh, biểu cảm trung tính, nền phông trường quay màu TRẮNG tinh liền mạch, ánh sáng studio chuyên nghiệp, chỉ một người duy nhất trong khung hình — không phải ảnh ghép, không phải lưới nhiều ảnh nhỏ, không chữ, không watermark.`,
     stylePhrase ? `Phong cách: ${stylePhrase}.` : null,
     appearance ? `Ngoại hình: ${appearance}.` : null,
   ]
@@ -321,12 +347,7 @@ export async function createCharacter(rawInput: unknown): Promise<ActionResult<{
       return err("VALIDATION_ERROR", `Tag "@${input.tagName}" đã được dùng cho một nhân vật khác trong workspace này.`);
     }
     console.error("[createCharacter]", insertError);
-    return err(
-      "DB_ERROR",
-      insertError?.code === "42P01"
-        ? "Chưa thể tạo nhân vật — bảng dữ liệu `characters` chưa tồn tại. Cần chạy migration 0008_characters.sql trên Supabase trước."
-        : "Không thể tạo nhân vật. Vui lòng thử lại."
-    );
+    return err("DB_ERROR", describeCharactersTableError(insertError));
   }
 
   revalidatePath("/create/character");
@@ -392,24 +413,24 @@ export async function renameCharacter(rawInput: unknown): Promise<ActionResult<n
   return ok(null);
 }
 
-const createCharacterSheetSchema = z
-  .object({
-    characterId: z.string().uuid(),
-    brandId: z.string().uuid(),
-    model: z.string().trim().min(1).default("auto"),
-    count: z.number().int().min(1).max(4).default(2),
-    style: z.enum(STYLE_IDS).default("photo"),
-    customStyle: z.string().trim().max(MAX_STYLE_LENGTH, "Mô tả phong cách quá dài.").default(""),
-    appearanceDescription: z.string().trim().max(MAX_APPEARANCE_LENGTH, "Mô tả ngoại hình quá dài.").default(""),
-    outfitDescription: z.string().trim().max(MAX_OUTFIT_LENGTH, "Mô tả trang phục quá dài.").default(""),
-    // A signed URL to an outfit reference image already uploaded to our own
-    // Storage via uploadReferenceImage() — same SSRF constraint as every
-    // other reference-image field, re-checked by generateImages() itself.
-    outfitReferenceImageUrl: z.string().url().optional(),
-    negativePrompt: z.string().trim().max(MAX_NEGATIVE_PROMPT_LENGTH, "Phần loại trừ quá dài.").default(""),
-  })
-  .merge(sizeFieldsSchema)
-  .refine(hasExactlyOneSizeSource, { message: "Cần chọn đúng một kích thước.", path: ["sizePresetId"] });
+const createCharacterSheetSchema = z.object({
+  characterId: z.string().uuid(),
+  brandId: z.string().uuid(),
+  model: z.string().trim().min(1).default("auto"),
+  // Only meaningful when the resolved model is Marketing Studio (the one
+  // model whose real schema has a resolution tier at all — see
+  // marketing-studio-provider.ts); ignored otherwise.
+  resolution: z.enum(MARKETING_STUDIO_RESOLUTIONS).default("2k"),
+  style: z.enum(STYLE_IDS).default("photo"),
+  customStyle: z.string().trim().max(MAX_STYLE_LENGTH, "Mô tả phong cách quá dài.").default(""),
+  appearanceDescription: z.string().trim().max(MAX_APPEARANCE_LENGTH, "Mô tả ngoại hình quá dài.").default(""),
+  outfitDescription: z.string().trim().max(MAX_OUTFIT_LENGTH, "Mô tả trang phục quá dài.").default(""),
+  // A signed URL to an outfit reference image already uploaded to our own
+  // Storage via uploadReferenceImage() — same SSRF constraint as every
+  // other reference-image field, re-checked by generateImages() itself.
+  outfitReferenceImageUrl: z.string().url().optional(),
+  negativePrompt: z.string().trim().max(MAX_NEGATIVE_PROMPT_LENGTH, "Phần loại trừ quá dài.").default(""),
+});
 
 export interface CharacterSheetViewResult {
   view: CharacterView;
@@ -419,18 +440,33 @@ export interface CharacterSheetViewResult {
 }
 
 /**
- * Generates a character sheet: `count` views (CHARACTER_VIEWS, in order —
- * portrait, front, side, back), each through the UNMODIFIED
- * generateImages() pipeline with the character's locked face as
- * referenceImageUrl. Every view is its own real generation_jobs row with
- * its own fallback chain and attempts — this function only adds the
- * character_id/character_view/character_sheet_id linkage as a follow-up
- * UPDATE once each job exists, never branches the core generation logic
- * itself. A view whose model doesn't actually support reference images
- * (see each adapter's describeAdjustments) still generates — just without
- * face consistency, which the existing attempts.adjustments mechanism
- * already surfaces transparently, same as every other model limitation in
- * this app.
+ * Generates a character sheet as ONE image from ONE model call — not 6
+ * separate generations stitched together server-side (that was this
+ * function's previous design; see git history / compose-sheet.ts, now
+ * unused, if that approach is ever needed again). `buildContactSheetPrompt`
+ * describes all 6 required cells in a single prompt, and exactly one
+ * `generateImages()` call is made, with `singleModelOnly: true` so a
+ * provider failure is reported honestly instead of silently retried on a
+ * different model that might not support the same aspect_ratio/
+ * reference-image params this specific request needs (see schema.ts).
+ *
+ * Only Marketing Studio's confirmed schema has both `aspect_ratio` (so
+ * "16:9" can be requested directly) and a 2-image reference slot (so the
+ * outfit photo can be sent alongside the face) — see
+ * marketing-studio-provider.ts's own doc comment, sourced from live API
+ * probes. When a different model is selected/resolved, this falls back to
+ * requesting 16:9 via `exactSize` pixel dimensions (the same pattern every
+ * other non-Marketing-Studio request in this app already uses for an
+ * arbitrary ratio) and sends only the single face reference — the outfit
+ * image is never silently dropped-but-claimed-sent; `outfitImageSent`
+ * reports the truth either way, and the UI (character-builder.tsx)
+ * discloses the limitation when it's false.
+ *
+ * No model this app integrates with has a native "contact sheet" layout
+ * parameter — whether the result actually contains all 6 cells, correctly
+ * positioned and non-overlapping, depends entirely on how well the model
+ * follows the literal prompt description. This is never asserted as
+ * guaranteed, only requested.
  */
 export async function createCharacterSheet(
   rawInput: unknown
@@ -455,58 +491,68 @@ export async function createCharacterSheet(
   const faceUrl = await resolveSignedAssetUrl(supabase, character.face_storage_path);
   if (!faceUrl) return err("NOT_FOUND", "Không thể lấy ảnh khuôn mặt đã khóa của nhân vật này.");
 
-  // Only Marketing Studio's adapter reads `referenceImageUrls` (plural) —
-  // every other model only reads the singular `referenceImageUrl`, so an
-  // outfit reference image is only ever actually transmitted here; for
-  // any other model it's silently excluded from the REQUEST (never
-  // claimed as applied — character-builder.tsx shows the same condition
-  // next to the picker before the user even submits).
-  const outfitImageSent = Boolean(input.outfitReferenceImageUrl) && input.model === MARKETING_STUDIO_MODEL_ID;
+  // Resolve what model will ACTUALLY be used before deciding the size/
+  // reference shape to send — "auto" never resolves to Marketing Studio
+  // (it's deliberately excluded from the default fallback order, see
+  // providers/index.ts's own comment: its aspect_ratio/resolution params
+  // can't be approximated from another model's pixel width/height), so
+  // this is the only reliable way to know whether aspect_ratio/resolution
+  // and a 2-image reference are really about to be honored.
+  const resolvedChain = resolveModelChain(input.model);
+  const effectiveModelId = resolvedChain[0] ?? "demo";
+  const effectiveModel = getModel(effectiveModelId);
+  const supportsContactSheetParams = effectiveModel.capabilities.supportsAspectRatioResolution;
+
+  const outfitImageSent = Boolean(input.outfitReferenceImageUrl) && supportsContactSheetParams;
   const referenceFields = outfitImageSent
-    ? { referenceImageUrls: [faceUrl, input.outfitReferenceImageUrl!] }
+    ? { referenceImageUrl: faceUrl, referenceImageUrls: [faceUrl, input.outfitReferenceImageUrl!] }
     : { referenceImageUrl: faceUrl };
+  // 1920×1080 — the same 16:9 pixel size every other non-Marketing-Studio
+  // request in this app would compute for this ratio (see
+  // character-builder.tsx's own pixelsForRatio, mirrored here server-side
+  // since this field is never user-chosen for this feature).
+  const sizeFields = supportsContactSheetParams
+    ? { aspectRatio: "16:9" as const, resolution: input.resolution }
+    : { exactSize: { width: 1920, height: 1080 } };
 
   const stylePhrase = resolveStylePromptText(input.style, input.customStyle);
   const sheetId = crypto.randomUUID();
-  const views = CHARACTER_VIEWS.slice(0, input.count);
-  const results: CharacterSheetViewResult[] = [];
 
-  for (const view of views) {
-    const result = await generateImages({
-      brandId: input.brandId,
-      prompt: buildCharacterSheetPrompt(
-        character.gender,
-        character.ethnicity,
-        character.age,
-        view,
-        stylePhrase,
-        input.appearanceDescription,
-        input.outfitDescription
-      ),
-      negativePrompt: input.negativePrompt,
-      ...resolveSizeFields(input),
-      count: 1,
-      model: input.model,
-      ...referenceFields,
-    });
+  const result = await generateImages({
+    brandId: input.brandId,
+    prompt: buildContactSheetPrompt(
+      character.gender,
+      character.ethnicity,
+      character.age,
+      stylePhrase,
+      input.appearanceDescription,
+      input.outfitDescription,
+      outfitImageSent
+    ),
+    negativePrompt: input.negativePrompt,
+    ...sizeFields,
+    count: 1,
+    model: input.model,
+    singleModelOnly: true,
+    ...referenceFields,
+  });
 
-    if (!result.ok) {
-      results.push({ view, ok: false, jobId: null, error: result.error.message });
-      continue;
-    }
-
-    const { error: updateError } = await supabase
-      .from("generation_jobs")
-      .update({ character_id: input.characterId, character_view: view, character_sheet_id: sheetId })
-      .eq("id", result.data.jobId);
-    if (updateError) console.error("[createCharacterSheet] link job", updateError);
-
-    results.push({ view, ok: true, jobId: result.data.jobId, error: null });
+  if (!result.ok) {
+    return err(result.error.code, result.error.message);
   }
 
-  if (results.every((r) => !r.ok)) {
-    return err("PROVIDER_ERROR", results[0]?.error ?? GENERIC_ERROR);
-  }
+  // "composite" already means "the one character-sheet image for this
+  // sheetId" everywhere else in this codebase (character-queries.ts,
+  // character-builder.tsx) — reused here rather than inventing a new
+  // view value, even though this image is now generated directly by the
+  // model instead of composed server-side from several real jobs.
+  const { error: updateError } = await supabase
+    .from("generation_jobs")
+    .update({ character_id: input.characterId, character_view: "composite", character_sheet_id: sheetId })
+    .eq("id", result.data.jobId);
+  if (updateError) console.error("[createCharacterSheet] link job", updateError);
+
+  const results: CharacterSheetViewResult[] = [{ view: "composite", ok: true, jobId: result.data.jobId, error: null }];
 
   revalidatePath("/create/character");
   return ok({ sheetId, results, outfitImageSent });

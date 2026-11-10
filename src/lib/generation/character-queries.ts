@@ -65,7 +65,16 @@ export async function getCharacter(characterId: string): Promise<Character | nul
   };
 }
 
-const VIEW_ORDER: CharacterView[] = ["portrait", "front", "side", "back"];
+const VIEW_ORDER: CharacterView[] = [
+  "front",
+  "back",
+  "portrait",
+  "portrait_side",
+  "portrait_profile",
+  "portrait_detail",
+  "side", // legacy-only (pre-redesign sheets)
+  "composite",
+];
 
 /**
  * Every "Tạo bảng nhân vật" click's generation_jobs rows, grouped by

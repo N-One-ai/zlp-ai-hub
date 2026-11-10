@@ -82,7 +82,6 @@ import { AUTO_MODEL_ID, modelLabel, type ModelMeta } from "@/lib/generation/mode
 import {
   CHARACTER_ETHNICITY_LABEL,
   CHARACTER_GENDER_LABEL,
-  CHARACTER_VIEWS,
   CHARACTER_VIEW_LABEL,
   CHARACTER_MIN_AGE,
   CHARACTER_MAX_AGE,
@@ -98,13 +97,15 @@ import type {
 } from "@/types/character";
 import type { SizePreset } from "@/types/brand";
 
-const HIGGSFIELD_MODEL_ID = "higgsfield-soul2";
 // The only model in this app whose adapter accepts a SECOND reference
-// image (see providers/marketing-studio-provider.ts, which reads
-// `referenceImageUrls`) — an outfit reference image only ever actually
-// reaches the request when this exact model is selected (mirrors the
-// same constant/condition in character-actions.ts's createCharacterSheet).
+// image AND a real aspect_ratio/resolution param (see
+// providers/marketing-studio-provider.ts, which reads `referenceImageUrls`
+// and `aspect_ratio`/`resolution` directly) — mirrors the same condition
+// in character-actions.ts's createCharacterSheet (there derived from
+// capabilities.supportsAspectRatioResolution, not this literal id, since
+// the server also has to handle "auto" resolving to a different model).
 const MARKETING_STUDIO_MODEL_ID = "higgsfield-marketing-studio";
+const MARKETING_STUDIO_RESOLUTION_CHIPS = ["1k", "2k", "4k"] as const;
 const POLL_INTERVAL_MS = 1_500;
 const POLL_MAX_ATTEMPTS = 100; // ~150s, same margin as ImageComposer
 const MAX_APPEARANCE_LENGTH = 600; // mirrors MAX_APPEARANCE_LENGTH in character-actions.ts (the COMPOSED description's real ceiling)
@@ -270,24 +271,6 @@ function pixelsForRatio(w: number, h: number): { width: number; height: number }
   return w >= h ? { width: longEdge, height: Math.round((longEdge * h) / w) } : { width: Math.round((longEdge * w) / h), height: longEdge };
 }
 
-/** Small outline rectangle proportioned to the real ratio — decorative,
- * not a literal lucide icon, since no single icon set covers 5 arbitrary
- * aspect ratios; this stays visually consistent with the rest of the
- * design system (just a bordered shape, same stroke-only treatment as
- * lucide icons elsewhere in this file). */
-function AspectRatioGlyph({ w, h, active }: { w: number; h: number; active: boolean }) {
-  const maxDim = 16;
-  const ratio = w / h;
-  const width = ratio >= 1 ? maxDim : Math.round(maxDim * ratio);
-  const height = ratio >= 1 ? Math.round(maxDim / ratio) : maxDim;
-  return (
-    <span
-      className={cn("inline-block shrink-0 rounded-[2px] border-[1.5px]", active ? "border-primary" : "border-muted-foreground/60")}
-      style={{ width, height }}
-    />
-  );
-}
-
 /** Bounded, aspect-ratio-correct image — never stretches/crops: the
  * wrapper's own aspect-ratio matches the real output size once known
  * (object-contain inside it never needs to crop), and falls back to a
@@ -376,19 +359,24 @@ export function CharacterBuilder({
   const [outfitUploadedImage, setOutfitUploadedImage] = useState<OutfitUploadedImage | null>(null);
   const [uploadingOutfitImage, setUploadingOutfitImage] = useState(false);
 
-  // Step 6 — Size ảnh: the ratio is the primary choice, always selectable
-  // regardless of which workspace presets exist (see resolveSizeFields
-  // below for how a ratio with no matching preset still resolves to a
-  // real, model-correct size).
-  const [aspectRatioChoice, setAspectRatioChoice] = useState<string>(() => {
+  // Only used for the "AI tự tạo khuôn mặt" helper's own generateCharacterFace()
+  // call now — the character SHEET itself is always requested at a fixed
+  // 16:9 (see createCharacterSheet), so this is no longer a user-facing
+  // picker; a sensible fixed default (matching a workspace preset's ratio
+  // when one exists) is enough for a single reference-face portrait.
+  const [aspectRatioChoice] = useState<string>(() => {
     const initial = presets[0] ? aspectRatioLabel(presets[0].width, presets[0].height) : DEFAULT_RATIO;
     return ASPECT_RATIO_CHIPS.some((c) => c.ratio === initial) ? initial : DEFAULT_RATIO;
   });
 
-  // Số ảnh + Mô hình AI
-  const defaultModel = models.find((m) => m.id === HIGGSFIELD_MODEL_ID)?.id ?? models[0]?.id ?? AUTO_MODEL_ID;
-  const [count, setCount] = useState("2");
+  // Mô hình AI — defaults to Marketing Studio when configured: it's the
+  // only model whose real schema has both aspect_ratio (so "16:9" can be
+  // requested directly) and a 2-image reference slot (face + outfit) —
+  // see createCharacterSheet's own doc comment. Falls back to whatever
+  // else is configured otherwise, same as every other picker in this app.
+  const defaultModel = models.find((m) => m.id === MARKETING_STUDIO_MODEL_ID)?.id ?? models[0]?.id ?? AUTO_MODEL_ID;
   const [model, setModel] = useState<string>(defaultModel);
+  const [resolution, setResolution] = useState<(typeof MARKETING_STUDIO_RESOLUTION_CHIPS)[number]>("2k");
 
   const [working, setWorking] = useState(false);
   const [statusText, setStatusText] = useState<string | null>(null);
@@ -487,11 +475,6 @@ export function CharacterBuilder({
         : outfitUploadedImage
           ? "Ảnh tải lên"
           : "Chưa có ảnh";
-  const sizeSummary = matchingPreset
-    ? `${aspectRatioChoice} · ${matchingPreset.width}×${matchingPreset.height}px`
-    : isMarketingStudioSelected
-      ? `${aspectRatioChoice} · 1K`
-      : `${aspectRatioChoice} · ước lượng`;
 
   const tagTrimmed = tagName.trim();
   const tagDuplicate =
@@ -680,13 +663,15 @@ export function CharacterBuilder({
 
       if (!characterId) return;
 
-      setStatusText("Đang tạo bảng nhân vật...");
+      // ONE request, ONE model call — no per-view loop, no client-side
+      // compositing. See createCharacterSheet's own doc comment
+      // (character-actions.ts) for exactly what gets sent.
+      setStatusText("Đang gửi 1 yêu cầu tạo character sheet (1 lần gọi model)...");
       const sheetResult = await createCharacterSheet({
         characterId,
         brandId,
         model,
-        ...sizeFieldsToSend,
-        count: Number(count),
+        resolution,
         style,
         customStyle,
         appearanceDescription,
@@ -700,31 +685,30 @@ export function CharacterBuilder({
       }
       if (outfitImageToSend && !sheetResult.data.outfitImageSent) {
         toast.message(
-          `Model "${modelLabel(model)}" chỉ nhận 1 ảnh tham chiếu (khuôn mặt) — ảnh trang phục không được gửi, hãy đổi sang "Tự nhập" để mô tả bằng văn bản.`
+          `Model "${modelLabel(model)}" không hỗ trợ ảnh tham chiếu trang phục — chỉ ảnh khuôn mặt được gửi. Chọn Higgsfield Marketing Studio để dùng ảnh này, hoặc đổi sang "Tự nhập" để mô tả bằng văn bản.`
         );
       }
 
-      const resolvedViews: CharacterSheetViewItem[] = [];
-      for (const r of sheetResult.data.results) {
-        if (!r.ok || !r.jobId) {
-          resolvedViews.push({
-            view: r.view,
-            jobId: r.jobId ?? "",
-            status: "failed",
-            url: null,
-            width: null,
-            height: null,
-            isDemo: false,
-            savedAssetId: null,
-            error: r.error,
-            prompt: "",
-            requestedModel: model,
-            finalModel: null,
-            attempts: [],
-          });
-          continue;
-        }
-        setStatusText(`Đang tạo góc ${CHARACTER_VIEW_LABEL[r.view]}...`);
+      const r = sheetResult.data.results[0];
+      let resolvedView: CharacterSheetViewItem;
+      if (!r || !r.ok || !r.jobId) {
+        resolvedView = {
+          view: r?.view ?? "composite",
+          jobId: r?.jobId ?? "",
+          status: "failed",
+          url: null,
+          width: null,
+          height: null,
+          isDemo: false,
+          savedAssetId: null,
+          error: r?.error ?? "Không thể tạo character sheet lúc này.",
+          prompt: "",
+          requestedModel: model,
+          finalModel: null,
+          attempts: [],
+        };
+      } else {
+        setStatusText("Đang chờ model trả về ảnh — request đã gửi, đang theo dõi trạng thái thật...");
         let job = null;
         for (let i = 0; i < POLL_MAX_ATTEMPTS; i++) {
           job = await getGenerationJobAction(r.jobId);
@@ -737,11 +721,11 @@ export function CharacterBuilder({
           const saveResult = await saveGenerationResult({
             jobId: r.jobId,
             outputIndex: 0,
-            name: `${label} — ${CHARACTER_VIEW_LABEL[r.view]}`,
+            name: `${label} — Character sheet (6 góc, 16:9)`,
           });
           if (saveResult.ok) savedAssetId = saveResult.data.assetId;
         }
-        resolvedViews.push({
+        resolvedView = {
           view: r.view,
           jobId: r.jobId,
           status: job?.status ?? "failed",
@@ -755,25 +739,22 @@ export function CharacterBuilder({
           requestedModel: job?.requestedModel ?? model,
           finalModel: job?.finalModel ?? null,
           attempts: job?.attempts ?? [],
-        });
+        };
       }
 
       const newSheet: CharacterSheet = {
         sheetId: sheetResult.data.sheetId,
         characterId,
         createdAt: new Date().toISOString(),
-        views: resolvedViews,
+        views: [resolvedView],
       };
       setActiveSheet(newSheet);
       setSheets((prev) => [newSheet, ...prev]);
 
-      const failedCount = resolvedViews.filter((v) => v.status !== "succeeded").length;
-      if (failedCount === resolvedViews.length) {
-        toast.error("Không thể tạo bảng nhân vật lúc này. Kiểm tra ghi chú lỗi trên từng ảnh bên dưới.");
-      } else if (failedCount > 0) {
-        toast.message(`Đã tạo ${resolvedViews.length - failedCount}/${resolvedViews.length} ảnh — một số góc bị lỗi.`);
+      if (resolvedView.status === "succeeded" && resolvedView.url) {
+        toast.success("Đã tạo 1 ảnh character sheet (6 góc gộp trong 1 ảnh, 1 lần gọi model).");
       } else {
-        toast.success(`Đã tạo bảng nhân vật (${resolvedViews.length} ảnh).`);
+        toast.error(resolvedView.error || "Không thể tạo character sheet lúc này. Kiểm tra ghi chú lỗi bên dưới.");
       }
     } finally {
       setWorking(false);
@@ -836,11 +817,6 @@ export function CharacterBuilder({
     }
   }
 
-  const aspectLabel = matchingPreset ? `${matchingPreset.width}×${matchingPreset.height}` : aspectRatioChoice;
-  const summaryViews = CHARACTER_VIEWS.slice(0, Number(count))
-    .map((v) => CHARACTER_VIEW_LABEL[v])
-    .join(", ");
-
   return (
     <div className="flex flex-col gap-4">
       {/* Tóm tắt cấu hình hiện tại */}
@@ -851,11 +827,9 @@ export function CharacterBuilder({
         <span>·</span>
         <span>{CHARACTER_GENDER_LABEL[isNew ? gender : (selectedCharacter?.gender ?? "female")]}</span>
         <span>·</span>
-        <span>{summaryViews || "Chưa chọn góc chụp"}</span>
+        <span>Character sheet 16:9 · 6 góc · 1 ảnh</span>
         <span>·</span>
         <span>{styleSummary}</span>
-        <span>·</span>
-        <span>{aspectLabel}</span>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[380px_1fr] items-start">
@@ -1295,9 +1269,9 @@ export function CharacterBuilder({
                   )}
                 </div>
                 <p className="text-[11px] text-muted-foreground">
-                  App chưa có tham số API riêng cho từng góc nhìn/biểu cảm — hệ thống tự chuyển các lựa chọn ở trên
-                  thành chỉ dẫn trong prompt của mỗi góc chụp (chọn số góc ở mục &quot;Số ảnh&quot; bên dưới), không
-                  cam kết khớp tuyệt đối 100%.
+                  App chưa có tham số API riêng cho ngoại hình — hệ thống tự chuyển các lựa chọn ở trên thành mô tả
+                  trong một prompt duy nhất, áp dụng cho cả 6 góc trong character sheet, không cam kết khớp tuyệt đối
+                  100%.
                 </p>
                 {showNegativePrompt ? (
                   <div className="flex flex-col gap-1.5">
@@ -1432,13 +1406,20 @@ export function CharacterBuilder({
                         </Button>
                       </>
                     )}
-                    {outfitUploadedImage && !isMarketingStudioSelected && (
-                      <p className="flex items-start gap-1 text-[11px] text-amber-600 dark:text-amber-500">
-                        <AlertTriangle className="mt-0.5 size-3 shrink-0" />
-                        Model đang chọn chỉ nhận 1 ảnh tham chiếu (khuôn mặt) — ảnh này sẽ không được gửi. Chọn
-                        Higgsfield Marketing Studio ở mục Model để gửi cả hai ảnh.
-                      </p>
-                    )}
+                    {outfitUploadedImage &&
+                      (isMarketingStudioSelected ? (
+                        <p className="flex items-start gap-1 text-[11px] text-emerald-600 dark:text-emerald-500">
+                          <CheckCircle2 className="mt-0.5 size-3 shrink-0" />
+                          Ảnh này sẽ được gửi làm ảnh tham chiếu trang phục (chỉ lấy kiểu dáng/màu sắc/họa tiết — khuôn
+                          mặt và danh tính luôn theo ảnh khuôn mặt).
+                        </p>
+                      ) : (
+                        <p className="flex items-start gap-1 text-[11px] text-amber-600 dark:text-amber-500">
+                          <AlertTriangle className="mt-0.5 size-3 shrink-0" />
+                          Model đang chọn chỉ nhận 1 ảnh tham chiếu (khuôn mặt) — ảnh này sẽ không được gửi. Chọn
+                          Higgsfield Marketing Studio ở mục Model để dùng ảnh này làm tham chiếu trang phục.
+                        </p>
+                      ))}
                   </div>
                 )}
               </CollapsiblePanel>
@@ -1448,49 +1429,58 @@ export function CharacterBuilder({
           <Card className="p-0 overflow-visible">
             <Collapsible defaultOpen className="p-4 flex flex-col gap-3">
               <CollapsibleTrigger>
-                <SectionHeading step={6} title="Size ảnh" summary={sizeSummary} icon={Grid3x3} />
+                <SectionHeading step={6} title="Đầu ra" summary="16:9 · 6 góc · 1 lần gọi model" icon={Grid3x3} />
               </CollapsibleTrigger>
               <CollapsiblePanel className="flex flex-col gap-3">
-                <div className="flex flex-col gap-2">
-                  <FieldLabel>Tỷ lệ ảnh</FieldLabel>
-                  <div className="flex flex-wrap gap-1.5">
-                    {ASPECT_RATIO_CHIPS.map((chip) => {
-                      const selected = chip.ratio === aspectRatioChoice;
-                      return (
-                        <button
-                          key={chip.ratio}
-                          type="button"
-                          onClick={() => setAspectRatioChoice(chip.ratio)}
-                          aria-pressed={selected}
-                          className={cn(
-                            "inline-flex items-center gap-2 rounded-full border px-3.5 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                            selected
-                              ? "border-primary bg-primary/10 text-primary"
-                              : "border-transparent bg-muted/60 text-muted-foreground hover:bg-muted"
-                          )}
-                        >
-                          <AspectRatioGlyph w={chip.w} h={chip.h} active={selected} />
-                          {chip.label}
-                          {selected && <Check className="size-3.5" />}
-                        </button>
-                      );
-                    })}
+                <div className="flex items-start gap-2 rounded-lg border border-primary/30 bg-primary/5 p-3 text-xs text-primary">
+                  <Grid3x3 className="mt-0.5 size-3.5 shrink-0" />
+                  <div className="flex flex-col gap-0.5">
+                    <span className="font-medium">1 ảnh đầu ra · 6 góc trong cùng một ảnh · 1 lần gọi model</span>
+                    <span className="text-muted-foreground">
+                      Không tạo 6 ảnh riêng, không ghép ảnh ở app — model được yêu cầu vẽ thẳng một contact sheet
+                      16:9 gồm 2 ô toàn thân lớn + 4 ô chân dung. Không model nào hỗ trợ sẵn bố cục nhiều ô, nên kết
+                      quả phụ thuộc vào việc model có làm theo mô tả hay không — không đảm bảo luôn đủ đúng 6 ô.
+                    </span>
                   </div>
-                  {matchingPreset ? (
-                    <p className="text-xs text-muted-foreground">
-                      Đang dùng: {matchingPreset.name} — {matchingPreset.width}×{matchingPreset.height}px
-                    </p>
-                  ) : isMarketingStudioSelected ? (
-                    <p className="text-xs text-muted-foreground">
-                      Chưa có preset {aspectRatioChoice} trong workspace — gửi tỷ lệ {aspectRatioChoice} · độ phân giải 1K
-                      thẳng tới Higgsfield Marketing Studio (model hỗ trợ tỷ lệ trực tiếp, không cần preset).
-                    </p>
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <FieldLabel>Độ phân giải</FieldLabel>
+                  {isMarketingStudioSelected ? (
+                    <>
+                      <div className="flex flex-wrap gap-1.5">
+                        {MARKETING_STUDIO_RESOLUTION_CHIPS.map((r) => {
+                          const selected = r === resolution;
+                          return (
+                            <button
+                              key={r}
+                              type="button"
+                              onClick={() => setResolution(r)}
+                              aria-pressed={selected}
+                              className={cn(
+                                "inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                                selected
+                                  ? "border-primary bg-primary/10 text-primary"
+                                  : "border-transparent bg-muted/60 text-muted-foreground hover:bg-muted"
+                              )}
+                            >
+                              {r.toUpperCase()}
+                              {selected && <Check className="size-3.5" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Gửi aspect_ratio: &quot;16:9&quot; · resolution: &quot;{resolution}&quot; thẳng tới Higgsfield
+                        Marketing Studio (model hỗ trợ 2 tham số này trực tiếp theo schema thật).
+                      </p>
+                    </>
                   ) : (
-                    <p className="text-xs text-muted-foreground">
-                      Chưa có preset {aspectRatioChoice} trong workspace — dùng kích thước ước lượng{" "}
-                      {pixelsForRatio(selectedRatioChip.w, selectedRatioChip.h).width}×
-                      {pixelsForRatio(selectedRatioChip.w, selectedRatioChip.h).height}px, model đã chọn sẽ tự làm tròn
-                      về kích thước thật gần nhất mà model đó hỗ trợ.
+                    <p className="flex items-start gap-1 text-xs text-amber-600 dark:text-amber-500">
+                      <AlertTriangle className="mt-0.5 size-3 shrink-0" />
+                      Model đang chọn không có tham số aspect_ratio/resolution riêng — app sẽ yêu cầu kích thước
+                      pixel 1920×1080 (16:9) thay thế. Chọn Higgsfield Marketing Studio để gửi đúng tham số thật của
+                      model.
                     </p>
                   )}
                 </div>
@@ -1498,35 +1488,6 @@ export function CharacterBuilder({
             </Collapsible>
 
             <div className="border-t border-border p-4 flex flex-col gap-3 rounded-b-xl">
-              <div className="flex items-center justify-between gap-2">
-                <Label className="text-xs text-muted-foreground">Số ảnh</Label>
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    size="icon-xs"
-                    variant="outline"
-                    aria-label="Giảm số ảnh"
-                    disabled={Number(count) <= 1}
-                    onClick={() => setCount(String(Math.max(1, Number(count) - 1)))}
-                  >
-                    <Minus className="size-3" />
-                  </Button>
-                  <span className="w-4 text-center text-sm font-medium tabular-nums">{count}</span>
-                  <Button
-                    type="button"
-                    size="icon-xs"
-                    variant="outline"
-                    aria-label="Tăng số ảnh"
-                    disabled={Number(count) >= CHARACTER_VIEWS.length}
-                    onClick={() => setCount(String(Math.min(CHARACTER_VIEWS.length, Number(count) + 1)))}
-                  >
-                    <Plus className="size-3" />
-                  </Button>
-                </div>
-                <span className="text-xs text-muted-foreground">{aspectLabel}</span>
-              </div>
-              <p className="text-[11px] text-muted-foreground">{summaryViews}</p>
-
               <div className="flex flex-col gap-1.5">
                 <Label className="text-xs text-muted-foreground">Mô hình AI (chỉ các model đã cấu hình thật)</Label>
                 <ModelPicker models={models} value={model} onChange={setModel} />
@@ -1534,14 +1495,14 @@ export function CharacterBuilder({
                   <p className="flex items-start gap-1 text-xs text-amber-600 dark:text-amber-500">
                     <AlertTriangle className="mt-0.5 size-3 shrink-0" />
                     Model này chưa hỗ trợ ảnh tham chiếu khuôn mặt trong app — kết quả có thể không khớp khuôn mặt đã
-                    khóa (xem ghi chú ở từng ảnh sau khi tạo).
+                    khóa (xem ghi chú sau khi tạo).
                   </p>
                 )}
               </div>
 
               <Button type="button" size="lg" disabled={!canSubmit} onClick={handleGenerateSheet}>
                 {working ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
-                {working ? statusText ?? "Đang tạo..." : "Tạo bảng nhân vật"}
+                {working ? statusText ?? "Đang tạo..." : "Tạo character sheet"}
               </Button>
               {!brandId && <p className="text-xs text-destructive">Workspace chưa có thương hiệu active.</p>}
             </div>
@@ -1558,11 +1519,42 @@ export function CharacterBuilder({
               </div>
             ) : activeSheet ? (
               <div className="flex flex-col gap-3">
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  {activeSheet.views.map((v) => (
-                    <CharacterSheetViewCard key={v.jobId || v.view} item={v} onOpenLarge={() => v.url && setViewerItem(v)} />
-                  ))}
-                </div>
+                {(() => {
+                  // Exactly one item now — one request, one model call, one
+                  // image (see createCharacterSheet's own doc comment). No
+                  // separate per-view images, so nothing to pick from.
+                  const item = activeSheet.views[0] ?? null;
+                  if (!item) return null;
+                  if (item.status === "succeeded" && item.url) {
+                    return (
+                      <div className="flex flex-col gap-1.5">
+                        <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                          <Grid3x3 className="size-3.5" />
+                          Character sheet — 1 ảnh · 6 góc · 16:9
+                        </div>
+                        <button type="button" onClick={() => setViewerItem(item)} className="group block w-full">
+                          <div className="relative overflow-hidden rounded-lg bg-muted ring-1 ring-border">
+                            <FitImage src={item.url} alt={CHARACTER_VIEW_LABEL.composite} width={item.width} height={item.height} />
+                            <span className="absolute inset-0 flex items-center justify-center bg-background/0 opacity-0 transition-all group-hover:bg-background/40 group-hover:opacity-100">
+                              <Maximize2 className="size-5 text-foreground" />
+                            </span>
+                          </div>
+                        </button>
+                        {item.isDemo && (
+                          <Badge variant="outline" className="w-fit text-[10px]">
+                            Demo
+                          </Badge>
+                        )}
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="flex flex-col items-center gap-2 py-10 text-center">
+                      <AlertTriangle className="size-6 text-destructive/70" />
+                      <p className="text-sm text-destructive">{item.error || "Không thể tạo character sheet lúc này."}</p>
+                    </div>
+                  );
+                })()}
                 <SheetMetaFooter sheet={activeSheet} />
                 <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
                   <Button type="button" size="sm" variant="outline" disabled={!canSubmit} onClick={handleGenerateSheet}>
@@ -1613,7 +1605,8 @@ export function CharacterBuilder({
             ) : (
               <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
                 {sheets.map((sheet, i) => {
-                  const cover = sheet.views.find((v) => v.url) ?? sheet.views[0];
+                  const cover =
+                    sheet.views.find((v) => v.view === "composite" && v.url) ?? sheet.views.find((v) => v.url) ?? sheet.views[0];
                   return (
                     <div key={sheet.sheetId} className="group relative">
                       <button
@@ -1717,7 +1710,7 @@ export function CharacterBuilder({
 }
 
 function SheetMetaFooter({ sheet }: { sheet: CharacterSheet }) {
-  const main = sheet.views.find((v) => v.status === "succeeded") ?? sheet.views[0];
+  const main = sheet.views[0];
   if (!main) return null;
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border pt-3 text-xs text-muted-foreground">
@@ -1733,44 +1726,3 @@ function SheetMetaFooter({ sheet }: { sheet: CharacterSheet }) {
   );
 }
 
-function CharacterSheetViewCard({ item, onOpenLarge }: { item: CharacterSheetViewItem; onOpenLarge: () => void }) {
-  const adjustmentNote = item.attempts.flatMap((a) => a.adjustments ?? []).find((a) => a.toLowerCase().includes("tham chiếu"));
-
-  return (
-    <div className="flex flex-col gap-1.5">
-      <div className="relative overflow-hidden rounded-lg bg-muted ring-1 ring-border">
-        {item.status === "succeeded" && item.url ? (
-          <button type="button" onClick={onOpenLarge} className="group block w-full">
-            <FitImage src={item.url} alt={CHARACTER_VIEW_LABEL[item.view]} width={item.width} height={item.height} />
-            <span className="absolute inset-0 flex items-center justify-center bg-background/0 opacity-0 transition-all group-hover:bg-background/40 group-hover:opacity-100">
-              <Maximize2 className="size-5 text-foreground" />
-            </span>
-          </button>
-        ) : item.status === "succeeded" && !item.url ? (
-          <div className="flex aspect-[3/4] flex-col items-center justify-center gap-1 p-3 text-center text-xs text-muted-foreground">
-            <AlertTriangle className="size-4" />
-            Không tìm thấy ảnh (có thể đã bị xoá khỏi lưu trữ).
-          </div>
-        ) : item.status === "failed" ? (
-          <div className="flex aspect-[3/4] flex-col items-center justify-center gap-1 p-3 text-center text-xs text-destructive">
-            <AlertTriangle className="size-4" />
-            {item.error || "Không thể tạo ảnh."}
-          </div>
-        ) : (
-          <div className="flex aspect-[3/4] items-center justify-center">
-            <Loader2 className="size-5 animate-spin text-muted-foreground" />
-          </div>
-        )}
-      </div>
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-medium">{CHARACTER_VIEW_LABEL[item.view]}</span>
-        {item.isDemo && (
-          <Badge variant="outline" className="text-[10px]">
-            Demo
-          </Badge>
-        )}
-      </div>
-      {adjustmentNote && <p className="text-[11px] text-amber-600 dark:text-amber-500">{adjustmentNote}</p>}
-    </div>
-  );
-}
