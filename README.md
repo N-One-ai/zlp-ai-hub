@@ -46,6 +46,16 @@ npm run dev                  # http://localhost:3000
      `creative-assets` (private) + RLS/policy.
    - `0005_design_documents_exports.sql` — design_documents, exports,
      `creative_assets.current_design_document_id`.
+   - `0006_generation_model_fallback.sql` — `requested_model`/`final_model`/
+     `attempts` trên generation_jobs (chọn model AI + fallback tự động).
+   - `0007_avatars.sql` — bucket Storage `avatars` cho ảnh đại diện người dùng.
+   - `0008_characters.sql` — bảng `characters` (Xây dựng nhân vật) +
+     `character_id`/`character_view`/`character_sheet_id` trên
+     generation_jobs. **CHƯA ĐƯỢC ÁP DỤNG trong môi trường phát triển này**
+     (không có `SUPABASE_SERVICE_ROLE_KEY`/Supabase CLI đã link) — trang
+     `/create/character` tự phát hiện lỗi truy vấn và hiện danh sách nhân vật
+     rỗng thay vì crash, nhưng tạo/lưu nhân vật sẽ báo lỗi cho đến khi migration
+     này được chạy thủ công. Xem mục "Xây dựng nhân vật" bên dưới.
 4. (Tuỳ chọn, chưa bắt buộc ở Task 1.0-3.0) `SUPABASE_SERVICE_ROLE_KEY` chỉ
    cần khi có tính năng server-only dùng `src/lib/supabase/admin.ts`.
 
@@ -331,6 +341,49 @@ tài liệu công khai (tài liệu đó thiếu hẳn phần response/status).
   thể vượt `POLL_TIMEOUT_MS` hiện tại (60s) hoặc giới hạn thời gian của
   Server Action trên production — rủi ro có sẵn từ kiến trúc "không có
   worker nền" (xem Task 3.0), không phải lỗi riêng của model này.
+
+## Xây dựng nhân vật (Character Builder)
+
+Trang `/create/character` ("Xây dựng nhân vật" trong sidebar) — khóa một
+khuôn mặt (tải ảnh lên, hoặc để AI tự tạo) gắn với một "nhân vật" (tên định
+danh `@tag` + giới tính), rồi tạo **bảng nhân vật**: 1-3 ảnh toàn thân nhất
+quán theo các góc chụp cố định (chính diện / nghiêng 3/4 / phía sau), tái sử
+dụng cho các lần tạo ảnh/banner sau. Mỗi ảnh vẫn đi qua đúng pipeline
+`generateImages()` sẵn có (Task 3.0) — cùng chuỗi fallback model, cùng cơ
+chế `attempts`/adjustments minh bạch, cùng quy ước lưu Storage/signed URL —
+`character-actions.ts` chỉ gắn thêm `character_id`/`character_view`/
+`character_sheet_id` sau khi mỗi job đã chạy xong, không tạo một luồng sinh
+ảnh song song khác.
+
+- **Schema mới**: bảng `characters` + 3 cột trên `generation_jobs` (migration
+  `0008_characters.sql`, **cần chạy thủ công** — xem mục migrations ở trên).
+  Trong môi trường này (chưa chạy), trang vẫn load được (danh sách nhân vật
+  rỗng, `getCharacters()` tự bắt lỗi truy vấn), nhưng "Tạo bảng nhân vật"
+  (hoặc "AI tự tạo" khuôn mặt) sẽ báo lỗi DB — không giả vờ thành công.
+- **Khuôn mặt**: "Tải ảnh mặt" lưu vào bucket `creative-assets` sẵn có, thư
+  mục riêng `<workspace_id>/_character-faces/` (không dùng chung
+  `_reference/` vì ảnh tham chiếu thường là tạm thời, còn khuôn mặt nhân vật
+  cần tồn tại lâu dài) — cần tick xác nhận quyền sử dụng ảnh trước khi khóa.
+  "AI tự tạo" sinh một ảnh chân dung qua đúng `generateImages()`, người dùng
+  xem trước rồi mới bấm khóa — không tự động khóa khi chưa xem.
+- **Giới hạn đã biết, nêu rõ thay vì giả lập**: trong số các model đã nối
+  dây (`src/lib/generation/model-meta.ts`), chỉ Higgsfield Soul và Higgsfield
+  Marketing Studio thực sự nhận ảnh tham chiếu (`maxReferenceImages >= 1`).
+  Nano Banana Pro/ChatGPT **chưa** hỗ trợ ảnh tham chiếu trong app này — nếu
+  người dùng chọn một trong hai model đó, ảnh vẫn được tạo nhưng sẽ không
+  khớp khuôn mặt đã khóa; UI hiện cảnh báo rõ ở bộ chọn model và ở từng ảnh
+  kết quả (đọc từ `attempts[].adjustments`, cơ chế có sẵn từ Task 3.0, không
+  phải thêm mới).
+- **"Số ảnh" = số góc chụp** trong bộ 3 góc cố định (chính diện/nghiêng/phía
+  sau) — không phải prompt tự do, vì mục đích của bảng nhân vật là một bộ
+  tham chiếu nhất quán, không phải một cảnh bất kỳ.
+- **Lịch sử**: mỗi lần bấm "Tạo bảng nhân vật" là một `character_sheet_id`
+  mới, không ghi đè bảng cũ — danh sách "Lịch sử" bên phải liệt kê mọi bảng
+  đã tạo cho nhân vật đang chọn, bấm vào để xem lại.
+- **Chưa làm trong lát cắt này** (ngoài phạm vi yêu cầu, không giả lập):
+  sửa/xoá nhân vật, đổi khuôn mặt sau khi đã khóa, và highlight trực tiếp
+  trong "@ Elements" của Tạo ảnh (ảnh của nhân vật vẫn xuất hiện ở đó như mọi
+  ảnh đã lưu khác, chỉ chưa có bộ lọc "theo nhân vật" riêng).
 
 ## Trang Tạo ảnh — composer + gallery (nâng cấp UI)
 

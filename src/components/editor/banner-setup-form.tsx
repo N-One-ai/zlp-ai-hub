@@ -233,7 +233,7 @@ export function BannerSetupForm({
   const missingReason = !brandId ? "Chọn thương hiệu để tiếp tục." : !sizePresetId ? "Chọn kích thước để tiếp tục." : null;
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-8">
       {/* Step 1 — Setup */}
       <Card>
         <StepHeader

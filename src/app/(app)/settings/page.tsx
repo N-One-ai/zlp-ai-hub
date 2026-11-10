@@ -86,7 +86,7 @@ export default async function SettingsPage() {
               href="/brands"
               className="flex items-center gap-3 rounded-lg border border-border px-3.5 py-3 transition-colors hover:bg-accent"
             >
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-icon bg-muted">
                 <Palette className="size-4 text-muted-foreground" />
               </span>
               <span className="flex-1 min-w-0">
@@ -101,7 +101,7 @@ export default async function SettingsPage() {
               href="/members"
               className="flex items-center gap-3 rounded-lg border border-border px-3.5 py-3 transition-colors hover:bg-accent"
             >
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-icon bg-muted">
                 <Users className="size-4 text-muted-foreground" />
               </span>
               <span className="flex-1 min-w-0">

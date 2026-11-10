@@ -8,7 +8,7 @@ export function StatCard({ label, value, icon: Icon }: { label: string; value: n
   return (
     <Card>
       <CardContent className="flex items-center gap-3">
-        <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent/15 text-accent">
+        <div className="flex size-10 shrink-0 items-center justify-center rounded-icon bg-accent/15 text-accent">
           <Icon className="size-4.5" />
         </div>
         <div className="flex flex-col min-w-0">

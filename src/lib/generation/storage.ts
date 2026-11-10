@@ -17,6 +17,17 @@ export function buildReferenceImagePath(workspaceId: string, extension: string):
   return `${workspaceId}/_reference/${crypto.randomUUID()}.${extension}`;
 }
 
+/** A Character Builder face upload — unlike buildReferenceImagePath above,
+ * this IS meant to persist indefinitely (a character's locked face is
+ * reused across every future sheet/job for that character, not a
+ * one-request input), so it lives in its own subfolder rather than
+ * "_reference". Same bucket/RLS convention: first path segment is still
+ * workspace_id, so the existing creative-assets Storage policies apply
+ * unchanged — no migration needed for Storage itself. */
+export function buildCharacterFacePath(workspaceId: string, extension: string): string {
+  return `${workspaceId}/_character-faces/${crypto.randomUUID()}.${extension}`;
+}
+
 /** Same reasoning as lib/brand/storage.ts's resolveSignedUrl: fails
  * closed (null) rather than guessing, and relies on the caller's own
  * RLS-scoped client so a signed URL can never be minted for an object

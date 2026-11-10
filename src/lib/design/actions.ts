@@ -10,8 +10,9 @@ import { downloadBrandAsset } from "@/lib/brand/storage";
 import { readImageDimensions } from "@/lib/generation/image-dimensions";
 import { getTemplates } from "@/lib/brand/queries";
 import { getBrandImageAssets } from "./queries";
+import { getDefaultLogoBox } from "./logo-size";
 import { trackEvent } from "@/lib/analytics/track";
-import type { DesignLayer } from "@/types/database";
+import type { DesignLayer, SafeZone } from "@/types/database";
 
 const GENERIC_ERROR = "Đã có lỗi xảy ra. Vui lòng thử lại.";
 let layerSeq = 0;
@@ -61,12 +62,13 @@ export async function createBannerAsset(rawInput: unknown): Promise<ActionResult
   interface GuidelineSummary {
     fonts: { heading?: { family: string; fallback: string }; body?: { family: string; fallback: string } };
     logo_primary_path: string | null;
+    safe_zone: SafeZone | null;
   }
   let guideline: GuidelineSummary | null = null;
   if (brand?.current_guideline_version_id) {
     const { data } = await supabase
       .from("brand_guideline_versions")
-      .select("fonts, logo_primary_path")
+      .select("fonts, logo_primary_path, safe_zone")
       .eq("id", brand.current_guideline_version_id)
       .maybeSingle();
     if (data) guideline = data;
@@ -102,31 +104,37 @@ export async function createBannerAsset(rawInput: unknown): Promise<ActionResult
   });
 
   if (guideline?.logo_primary_path) {
-    // Default placement (no template override): 60px from the left/top
-    // edge, 60px tall — measured directly off a reference banner image
-    // the user supplied (Zalopay wordmark logo at 1200x1200: bounding box
-    // x=57-60, y=58-61, height≈60-63px — 60/60/60 is the clean, centered
-    // read of that measurement). Width derived from the logo's REAL
-    // natural dimensions (read from the file bytes — PNG/JPEG/WebP
-    // headers or an SVG's width/height/viewBox, see image-dimensions.ts)
-    // so it never gets stretched into a square. Falls back to a square
-    // only when the real dimensions genuinely can't be read (e.g. a
-    // corrupt file) — never silently guesses a wrong ratio.
-    const LOGO_DEFAULT_HEIGHT_PX = 60;
+    // Real natural aspect ratio of the logo file (read from its actual
+    // bytes — PNG/JPEG/WebP headers or an SVG's width/height/viewBox, see
+    // image-dimensions.ts) — width is always derived from this, never set
+    // independently of height, so the logo can never come out stretched.
+    // Falls back to a square aspect only when the real dimensions
+    // genuinely can't be read (e.g. a corrupt file) — never silently
+    // guesses a wrong ratio.
     const logoBytes = await downloadBrandAsset(supabase, guideline.logo_primary_path);
     const naturalSize = logoBytes ? readImageDimensions(logoBytes) : null;
-    const defaultWidth = naturalSize
-      ? Math.round(LOGO_DEFAULT_HEIGHT_PX * (naturalSize.width / naturalSize.height))
-      : LOGO_DEFAULT_HEIGHT_PX;
+    const aspect = naturalSize ? naturalSize.width / naturalSize.height : 1;
 
-    const logoPos = template?.layout.logo ?? { x: 60, y: 60, widthPx: defaultWidth };
+    // A template's own layout.logo gives an explicit x/y/widthPx — honor
+    // that position/width exactly, but still derive height from the
+    // real aspect ratio instead of reusing widthPx as height (which
+    // would force the logo into a square whenever the template's width
+    // isn't already square). With no template, the box comes from this
+    // preset's own deterministic default (see getDefaultLogoBox) — sized
+    // and placed relative to THIS preset's actual canvas + safe zone,
+    // not a flat pixel constant shared by every size.
+    const templateLogo = template?.layout.logo;
+    const logoBox = templateLogo
+      ? { x: templateLogo.x, y: templateLogo.y, width: templateLogo.widthPx, height: Math.round(templateLogo.widthPx / aspect) }
+      : getDefaultLogoBox(preset.width, preset.height, aspect, guideline.safe_zone);
+
     layers.push({
       id: newLayerId(),
       type: "logo",
-      x: logoPos.x,
-      y: logoPos.y,
-      width: logoPos.widthPx,
-      height: template?.layout.logo ? logoPos.widthPx : LOGO_DEFAULT_HEIGHT_PX,
+      x: logoBox.x,
+      y: logoBox.y,
+      width: logoBox.width,
+      height: logoBox.height,
       rotation: 0,
       zIndex: 10,
       imagePath: guideline.logo_primary_path,

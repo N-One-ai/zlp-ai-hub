@@ -24,6 +24,7 @@ import { saveDesignDocument, exportDesign, duplicateBannerAsset, getBrandImageAs
 import { uploadImageAsset } from "@/lib/generation/actions";
 import { checkGuideline, hasBlockingFailure } from "@/lib/design/guideline-check";
 import { scaleLayersToSize } from "@/lib/design/resize";
+import { getDefaultLogoBox } from "@/lib/design/logo-size";
 import { trackEvent } from "@/lib/analytics/track";
 import type { ResolvedLayer } from "@/types/design";
 import type { GuidelineVersion, SizePreset } from "@/types/brand";
@@ -304,13 +305,6 @@ export function EditorShell({
     pushHistory([...layers, layer]);
   }
 
-  const LOGO_DEFAULT_X = 60;
-  const LOGO_DEFAULT_Y = 60;
-  // Measured off a reference banner the user supplied (Zalopay wordmark
-  // on a 1200x1200 canvas): bounding box x=57-60, y=58-61, height≈60-63px
-  // — 60/60/60 is the clean, centered read of that measurement.
-  const LOGO_DEFAULT_HEIGHT = 60;
-
   /** Real natural pixel size of an image URL, read via the browser's own
    * decoder (works for raster AND SVG) — used only to size a NEWLY placed
    * logo so its width follows its real aspect ratio instead of being
@@ -328,9 +322,10 @@ export function EditorShell({
   /** Switching between "Logo màu"/"Logo trắng" only ever swaps the asset
    * on the EXISTING logo layer — position/size stay exactly as they are,
    * per spec. The very first time a logo is placed (no logo layer yet),
-   * it's created at the fixed 60px/60px/48px-tall default, with its width
-   * derived from the chosen asset's real aspect ratio so it's never
-   * stretched into a square. */
+   * it's created at the active size preset's deterministic default box
+   * (see getDefaultLogoBox), with width always derived from the chosen
+   * asset's real natural aspect ratio — never set independently from
+   * height — so it's never stretched. */
   async function applyLogoVariant(_variant: "color" | "white", path: string, url: string) {
     const existing = layers.find((l) => l.type === "logo");
     if (existing) {
@@ -338,14 +333,15 @@ export function EditorShell({
       return;
     }
     const natural = await loadNaturalSize(url);
-    const width = natural ? Math.round(LOGO_DEFAULT_HEIGHT * (natural.width / natural.height)) : LOGO_DEFAULT_HEIGHT;
+    const aspect = natural ? natural.width / natural.height : 1;
+    const box = getDefaultLogoBox(size.width, size.height, aspect, guideline?.safeZone);
     const layer: ResolvedLayer = {
       id: newLayerId(),
       type: "logo",
-      x: LOGO_DEFAULT_X,
-      y: LOGO_DEFAULT_Y,
-      width,
-      height: LOGO_DEFAULT_HEIGHT,
+      x: box.x,
+      y: box.y,
+      width: box.width,
+      height: box.height,
       rotation: 0,
       zIndex: Math.max(0, ...layers.map((l) => l.zIndex)) + 1,
       imagePath: path,
@@ -408,7 +404,7 @@ export function EditorShell({
     if (!target || target.id === size.id) return;
 
     const updatedVariants = { ...sizeVariants, [size.id ?? "__unset__"]: layers };
-    const nextLayers = updatedVariants[target.id] ?? scaleLayersToSize(layers, size.width, size.height, target.width, target.height);
+    const nextLayers = updatedVariants[target.id] ?? scaleLayersToSize(layers, size.width, size.height, target.width, target.height, guideline?.safeZone);
 
     setSizeVariants({ ...updatedVariants, [target.id]: nextLayers });
     setSize({ id: target.id, name: target.name, width: target.width, height: target.height });

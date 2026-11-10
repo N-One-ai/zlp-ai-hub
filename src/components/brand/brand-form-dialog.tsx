@@ -36,7 +36,7 @@ export function BrandFormDialog({ workspaceId }: { workspaceId: string }) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <Button size="sm" onClick={() => setOpen(true)}>
+      <Button onClick={() => setOpen(true)}>
         <Plus className="size-4" />
         Tạo thương hiệu
       </Button>

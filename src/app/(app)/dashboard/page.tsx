@@ -55,10 +55,10 @@ export default async function DashboardPage() {
         <div className="flex flex-col gap-4">
           <Link
             href="/create/image"
-            className="@container group relative flex flex-1 flex-col @sm:flex-row overflow-hidden rounded-xl bg-gradient-to-br from-[#0033C9]/20 via-[#0033C9]/8 to-transparent ring-1 ring-[#0033C9]/25 hover:ring-[#0033C9]/45 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5b85ff] focus-visible:ring-offset-2 focus-visible:ring-offset-background transition-all"
+            className="@container group relative flex flex-1 flex-col @sm:flex-row overflow-hidden rounded-feature bg-gradient-to-br from-[#0033C9]/20 via-[#0033C9]/8 to-transparent ring-1 ring-[#0033C9]/25 hover:ring-[#0033C9]/45 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5b85ff] focus-visible:ring-offset-2 focus-visible:ring-offset-background transition-all"
           >
             <div className="relative z-10 flex flex-col gap-3 p-5 @sm:py-5 @sm:pr-2 @sm:max-w-[58%]">
-              <div className="flex size-10 items-center justify-center rounded-xl bg-[#0033C9] text-white shadow-sm shadow-[#0033C9]/30">
+              <div className="flex size-10 items-center justify-center rounded-icon bg-[#0033C9] text-white shadow-sm shadow-[#0033C9]/30">
                 <ImageIcon className="size-4.5" />
               </div>
               <div>
@@ -77,10 +77,10 @@ export default async function DashboardPage() {
 
           <Link
             href="/create/banner"
-            className="@container group relative flex flex-1 flex-col @sm:flex-row overflow-hidden rounded-xl bg-gradient-to-br from-[#00CF6A]/20 via-[#00CF6A]/8 to-transparent ring-1 ring-[#00CF6A]/25 hover:ring-[#00CF6A]/45 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00CF6A] focus-visible:ring-offset-2 focus-visible:ring-offset-background transition-all"
+            className="@container group relative flex flex-1 flex-col @sm:flex-row overflow-hidden rounded-feature bg-gradient-to-br from-[#00CF6A]/20 via-[#00CF6A]/8 to-transparent ring-1 ring-[#00CF6A]/25 hover:ring-[#00CF6A]/45 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00CF6A] focus-visible:ring-offset-2 focus-visible:ring-offset-background transition-all"
           >
             <div className="relative z-10 flex flex-col gap-3 p-5 @sm:py-5 @sm:pr-2 @sm:max-w-[58%]">
-              <div className="flex size-10 items-center justify-center rounded-xl bg-[#00CF6A] text-white shadow-sm shadow-[#00CF6A]/30">
+              <div className="flex size-10 items-center justify-center rounded-icon bg-[#00CF6A] text-white shadow-sm shadow-[#00CF6A]/30">
                 <LayoutTemplate className="size-4.5" />
               </div>
               <div>
@@ -144,13 +144,13 @@ export default async function DashboardPage() {
               <>
                 <Link
                   href="/create/image"
-                  className="text-sm font-medium px-3 py-1.5 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
+                  className="text-sm font-bold px-12 py-3 rounded-full bg-gradient-to-r from-primary to-cta-to text-primary-foreground shadow-sm transition-all hover:opacity-90 active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                 >
                   Tạo ảnh
                 </Link>
                 <Link
                   href="/create/banner"
-                  className="text-sm font-medium px-3 py-1.5 rounded-lg bg-secondary text-secondary-foreground hover:bg-secondary/80"
+                  className="text-sm font-bold px-12 py-3 rounded-full bg-secondary text-secondary-foreground hover:bg-secondary/80"
                 >
                   Tạo banner
                 </Link>

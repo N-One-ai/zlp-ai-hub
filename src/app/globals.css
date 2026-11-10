@@ -53,9 +53,39 @@
   --color-success-foreground: var(--success-foreground);
   --color-warning: var(--warning);
   --color-warning-foreground: var(--warning-foreground);
+  /* Single source of truth for the site-wide CTA button gradient's end
+   * color (brand blue --primary -> this green, left to right). Every
+   * primary action button reads this token — see buttonVariants'
+   * `default` variant in components/ui/button.tsx — instead of each
+   * call site repeating the raw hex. */
+  --color-cta-to: var(--cta-to);
+  /* Pill-shaped light CTA gradient (mint/ivory -> near-white -> bright
+   * sky blue) — no longer used by any button (superseded by the
+   * blue-to-green gradient above, --primary -> --cta-to). Left defined in
+   * case something still references it, rather than risking an
+   * undefined-var break. */
+  --color-pill-from: var(--pill-from);
+  --color-pill-via: var(--pill-via);
+  --color-pill-to: var(--pill-to);
+  --color-pill-foreground: var(--pill-foreground);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
+  /* --radius-lg is the single shared "interactive control" radius — every
+   * button, sidebar nav row, dropdown/select/popover panel and input reads
+   * it, so they always move together (see --radius-control below). It is
+   * deliberately NOT derived from --radius like the rest of this scale, so
+   * tuning it never also inflates --radius-xl+ (Card/panel containers). */
+  --radius-lg: var(--radius-control);
+  /* Decorative icon-background chip behind a single icon (stat cards, empty
+   * states, settings rows, sidebar nav icon badge, CTA tile icon badge,
+   * alert-dialog icon) — deliberately smaller/rounder than --radius-lg's
+   * 12px button radius so an icon chip never reads as "just another
+   * button". See --radius-icon below. */
+  --radius-icon: var(--radius-icon-size);
+  /* Large clickable feature tiles (the Dashboard "Tạo ảnh"/"Tạo banner"
+   * cards) — rounder than the 12px control radius since they're bigger,
+   * content-rich cards, not compact chrome. See --radius-feature below. */
+  --radius-feature: var(--radius-feature-size);
   --radius-xl: calc(var(--radius) * 1.4);
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
@@ -87,6 +117,18 @@
   --warning-foreground: oklch(0.2 0.04 80);
   --destructive: oklch(0.58 0.22 25);
   --destructive-foreground: oklch(0.99 0.01 25);
+  --cta-to: #01ec57;
+  /* Pill button gradient — 3-stop sweep: soft mint/ivory on the left,
+   * near-white through the middle, sweeping into a clearly-visible bright
+   * sky blue/cyan on the right (not a faint tint — it must read as blue
+   * at a glance). Dark-navy foreground for contrast across the whole
+   * sweep, including the blue end. Same values in both themes (a
+   * light-fill CTA pill is meant to stand out identically against a
+   * light or dark page). */
+  --pill-from: #dff2e3;
+  --pill-via: #f7fbff;
+  --pill-to: #3fa0f0;
+  --pill-foreground: #0f2030;
   --border: oklch(0.9 0.012 290);
   --input: oklch(0.9 0.012 290);
   --ring: oklch(0.423 0.232 263.7 / 50%);
@@ -95,12 +137,24 @@
   --chart-3: oklch(0.75 0.16 85);
   --chart-4: oklch(0.65 0.2 350);
   --chart-5: oklch(0.65 0.16 165);
-  /* Single radius scale for the whole app — --radius-lg (= --radius, 8px)
-     is the standard for every control (button, input, select, textarea,
-     dropdown/menu popups, sidebar nav row); --radius-xl (11.2px) is the
-     standard for large cards/panels (Card, hero cards, auth card, empty
-     states). Change this one value, not individual rounded-* classes. */
+  /* Single radius scale for the whole app. --radius-xl (11.2px) and up are
+     the standard for large STATIC cards/panels (Card, hero cards, auth
+     card, empty states), derived from --radius below — change --radius,
+     not individual rounded-* classes, to retune those. The three values
+     below are the separate "interactive" scale — every clickable/hoverable
+     surface reads one of these three, never --radius-xl+, so retuning them
+     never touches static card/panel corners:
+       --radius-control (12px) - button, input, select, textarea,
+         dropdown/menu/popover panels, sidebar selected/hover nav row.
+       --radius-icon-size (10px) - the small square background chip behind
+         a single icon (stat cards, empty states, settings rows, sidebar
+         nav icon badge, CTA tile icon badge, alert-dialog icon).
+       --radius-feature-size (16px) - large clickable feature tiles, e.g.
+         the Dashboard "Tạo ảnh"/"Tạo banner" cards. */
   --radius: 8px;
+  --radius-control: 12px;
+  --radius-icon-size: 10px;
+  --radius-feature-size: 16px;
   --sidebar: oklch(0.16 0.025 290);
   --sidebar-foreground: oklch(0.85 0.012 290);
   --sidebar-primary: oklch(0.423 0.232 263.7);
@@ -135,6 +189,7 @@
   --warning-foreground: oklch(0.18 0.035 85);
   --destructive: oklch(0.7 0.19 25);
   --destructive-foreground: oklch(0.15 0.03 25);
+  --cta-to: #01ec57;
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 14%);
   --ring: oklch(0.55 0.22 263.7 / 55%);

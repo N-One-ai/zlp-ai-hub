@@ -1,4 +1,5 @@
-import type { DesignLayer } from "@/types/database";
+import type { DesignLayer, SafeZone } from "@/types/database";
+import { getDefaultLogoBox } from "./logo-size";
 
 /**
  * Derives a never-before-saved size variant by proportionally remapping
@@ -6,22 +7,31 @@ import type { DesignLayer } from "@/types/database";
  * canvas dimensions to the NEW ones. This is a relative-coordinate
  * remap, not a hand-authored per-size layout table: a layer keeps the
  * same fractional position/size on the canvas, which is what keeps a
- * logo inside its safe margin and a tagline's hierarchy (size relative
- * to the subtitle) consistent across sizes without a second layout
- * system to maintain.
+ * tagline's hierarchy (size relative to the subtitle) consistent across
+ * sizes without a second layout system to maintain.
  *
  * The background layer is handled differently: its destination box is
  * simply resized to the new canvas — it has no "position" of its own to
  * rescale, since its fill is a live cover-fit crop recomputed from the
  * natural image size + focalX/focalY every render (see
  * computeCoverCrop below and canvas.tsx), not stored pixel-cropped data.
+ *
+ * The logo layer is also handled differently, deliberately NOT scaled by
+ * (scaleX, scaleY) independently: those two factors differ whenever the
+ * old and new canvas have different aspect ratios, and scaling width/
+ * height by different factors is exactly what stretches a logo out of
+ * its real proportions. Instead it gets the new canvas's own
+ * deterministic default box (see getDefaultLogoBox) — same aspect ratio
+ * as before (derived from its current width/height, never distorted),
+ * sized and placed fresh for the target canvas.
  */
 export function scaleLayersToSize<T extends DesignLayer>(
   layers: T[],
   fromWidth: number,
   fromHeight: number,
   toWidth: number,
-  toHeight: number
+  toHeight: number,
+  safeZone?: SafeZone | null
 ): T[] {
   if (fromWidth <= 0 || fromHeight <= 0) return layers;
   const scaleX = toWidth / fromWidth;
@@ -31,6 +41,10 @@ export function scaleLayersToSize<T extends DesignLayer>(
   return layers.map((layer) => {
     if (layer.type === "background") {
       return { ...layer, x: 0, y: 0, width: toWidth, height: toHeight };
+    }
+    if (layer.type === "logo" && layer.width > 0 && layer.height > 0) {
+      const box = getDefaultLogoBox(toWidth, toHeight, layer.width / layer.height, safeZone);
+      return { ...layer, ...box };
     }
     return {
       ...layer,

@@ -97,7 +97,7 @@ function AssetActions({
       <DropdownMenuTrigger
         disabled={isPending}
         aria-label={`Thao tác với ${asset.name || "tài sản"}`}
-        className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+        className="inline-flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
       >
         <MoreVertical className="size-4" />
       </DropdownMenuTrigger>

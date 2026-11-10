@@ -77,7 +77,7 @@ export default async function LibraryPage({
           action={
             <Link
               href="/library"
-              className="text-sm font-medium px-3 py-1.5 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
+              className="text-sm font-bold px-12 py-3 rounded-full bg-gradient-to-r from-primary to-cta-to text-primary-foreground shadow-sm transition-all hover:opacity-90 active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
               Thử lại
             </Link>
@@ -96,7 +96,7 @@ export default async function LibraryPage({
             !hasActiveFilters && (
               <Link
                 href="/create/image"
-                className="text-sm font-medium px-3 py-1.5 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
+                className="text-sm font-bold px-12 py-3 rounded-full bg-gradient-to-r from-primary to-cta-to text-primary-foreground shadow-sm transition-all hover:opacity-90 active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               >
                 Tạo ảnh
               </Link>

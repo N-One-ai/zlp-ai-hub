@@ -251,6 +251,9 @@ export interface Database {
           status: GenerationJobStatus;
           error: string | null;
           output: GenerationOutputItem[];
+          character_id: string | null;
+          character_view: CharacterView | null;
+          character_sheet_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -271,6 +274,9 @@ export interface Database {
           status?: GenerationJobStatus;
           error?: string | null;
           output?: GenerationOutputItem[];
+          character_id?: string | null;
+          character_view?: CharacterView | null;
+          character_sheet_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -291,6 +297,60 @@ export interface Database {
           status?: GenerationJobStatus;
           error?: string | null;
           output?: GenerationOutputItem[];
+          character_id?: string | null;
+          character_view?: CharacterView | null;
+          character_sheet_id?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      characters: {
+        Row: {
+          id: string;
+          workspace_id: string;
+          created_by: string;
+          display_name: string;
+          tag_name: string;
+          gender: CharacterGender;
+          ethnicity: CharacterEthnicity;
+          age: number;
+          face_source: "upload" | "ai";
+          face_storage_path: string | null;
+          face_locked: boolean;
+          consent_confirmed: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          workspace_id: string;
+          created_by: string;
+          display_name?: string;
+          tag_name: string;
+          gender?: CharacterGender;
+          ethnicity?: CharacterEthnicity;
+          age?: number;
+          face_source: "upload" | "ai";
+          face_storage_path?: string | null;
+          face_locked?: boolean;
+          consent_confirmed?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          workspace_id?: string;
+          created_by?: string;
+          display_name?: string;
+          tag_name?: string;
+          gender?: CharacterGender;
+          ethnicity?: CharacterEthnicity;
+          age?: number;
+          face_source?: "upload" | "ai";
+          face_storage_path?: string | null;
+          face_locked?: boolean;
+          consent_confirmed?: boolean;
           created_at?: string;
           updated_at?: string;
         };
@@ -519,6 +579,15 @@ export interface TemplateLayout {
 }
 
 export type GenerationJobStatus = "queued" | "processing" | "succeeded" | "failed" | "cancelled";
+
+/** Shared between generation_jobs.character_view and characters.gender —
+ * defined here (not in types/character.ts) since both Database table
+ * shapes above reference them and types/character.ts already imports
+ * FROM this file (avoids a circular import). types/character.ts re-exports
+ * both for callers that only need the character-domain types. */
+export type CharacterView = "portrait" | "front" | "side" | "back";
+export type CharacterGender = "male" | "female";
+export type CharacterEthnicity = "vietnamese" | "asian" | "european";
 
 export interface GenerationParams {
   aspectRatio: string;

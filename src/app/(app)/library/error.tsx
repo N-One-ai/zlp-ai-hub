@@ -8,7 +8,7 @@ export default function LibraryError({ reset }: { error: Error & { digest?: stri
   return (
     <Card>
       <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
-        <div className="flex size-12 items-center justify-center rounded-xl bg-destructive/10 text-destructive">
+        <div className="flex size-12 items-center justify-center rounded-icon bg-destructive/10 text-destructive">
           <AlertTriangle className="size-5" />
         </div>
         <div>

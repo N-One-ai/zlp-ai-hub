@@ -129,7 +129,7 @@ function BrandCard({
                 <DropdownMenuTrigger
                   aria-label={`Thao tác với ${brand.name}`}
                   disabled={isPending}
-                  className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+                  className="inline-flex size-8 items-center justify-center rounded-full text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
                 >
                   <MoreVertical className="size-4" />
                 </DropdownMenuTrigger>

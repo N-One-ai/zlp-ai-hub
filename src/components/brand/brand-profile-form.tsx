@@ -118,7 +118,7 @@ export function BrandProfileForm({
           />
         </div>
         <div className="flex items-center gap-2">
-          <Button type="submit" size="sm" disabled={isPending}>
+          <Button type="submit" disabled={isPending}>
             {isPending && <Loader2 className="size-4 animate-spin" />}
             Lưu
           </Button>

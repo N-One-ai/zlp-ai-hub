@@ -108,7 +108,7 @@ export function RegisterForm() {
         />
         {confirmError && <p className="text-sm text-destructive">{confirmError}</p>}
       </div>
-      <Button type="submit" disabled={isPending} className="mt-1">
+      <Button type="submit" disabled={isPending} className="mt-2">
         {isPending && <Loader2 className="size-4 animate-spin" />}
         Tạo tài khoản
       </Button>

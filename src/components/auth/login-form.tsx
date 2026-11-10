@@ -53,7 +53,7 @@ export function LoginForm({ redirectTo }: { redirectTo?: string }) {
           required
         />
       </div>
-      <Button type="submit" disabled={isPending} className="mt-1">
+      <Button type="submit" disabled={isPending} className="mt-2">
         {isPending && <Loader2 className="size-4 animate-spin" />}
         Đăng nhập
       </Button>

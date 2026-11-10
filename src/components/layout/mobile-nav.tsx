@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Library, Settings, Plus, Image as ImageIcon, LayoutTemplate } from "lucide-react";
+import { LayoutDashboard, Library, Settings, Plus, Image as ImageIcon, LayoutTemplate, UserRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
@@ -39,7 +39,7 @@ export function MobileNav() {
           <Popover>
             <PopoverTrigger
               aria-label="Tạo mới"
-              className="flex items-center justify-center size-12 rounded-full bg-gradient-to-br from-primary to-accent text-primary-foreground -translate-y-4 shadow-lg shadow-primary/30"
+              className="flex items-center justify-center size-12 rounded-full bg-gradient-to-br from-primary to-cta-to text-primary-foreground -translate-y-4 shadow-lg shadow-primary/30 transition-all hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
               <Plus className="size-5" />
             </PopoverTrigger>
@@ -57,6 +57,13 @@ export function MobileNav() {
               >
                 <LayoutTemplate className="size-4" />
                 Tạo banner
+              </Link>
+              <Link
+                href="/create/character"
+                className="flex items-center gap-2 rounded-md px-2.5 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
+              >
+                <UserRound className="size-4" />
+                Xây dựng nhân vật
               </Link>
             </PopoverContent>
           </Popover>

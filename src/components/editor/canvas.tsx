@@ -153,6 +153,18 @@ export function EditorCanvas({
     if (!transformer) return;
     const node = selectedId ? nodeRefs.current.get(selectedId) : null;
     transformer.nodes(node ? [node] : []);
+    // The logo must never come out stretched, including from a manual
+    // drag-resize: lock it to corner anchors only and force
+    // scaleX === scaleY (keepRatio), so independently resizing just the
+    // width or just the height is not possible for this layer type.
+    const layer = selectedId ? layers.find((l) => l.id === selectedId) : null;
+    if (layer?.type === "logo") {
+      transformer.keepRatio(true);
+      transformer.enabledAnchors(["top-left", "top-right", "bottom-left", "bottom-right"]);
+    } else {
+      transformer.keepRatio(false);
+      transformer.enabledAnchors(["top-left", "top-center", "top-right", "middle-left", "middle-right", "bottom-left", "bottom-center", "bottom-right"]);
+    }
     transformer.getLayer()?.batchDraw();
   }, [selectedId, layers]);
 

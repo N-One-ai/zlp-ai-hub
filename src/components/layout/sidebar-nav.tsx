@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Image as ImageIcon, LayoutTemplate, Library, Palette, Users, Settings } from "lucide-react";
+import { LayoutDashboard, Image as ImageIcon, LayoutTemplate, Library, Palette, Users, Settings, UserRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { MembershipRole } from "@/types/database";
 
@@ -18,6 +18,7 @@ const GROUPS: { label: string; items: NavItem[]; adminOnly?: boolean }[] = [
       { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
       { href: "/create/image", label: "Tạo ảnh", icon: ImageIcon },
       { href: "/create/banner", label: "Tạo banner", icon: LayoutTemplate },
+      { href: "/create/character", label: "Xây dựng nhân vật", icon: UserRound },
     ],
   },
   {
@@ -68,7 +69,7 @@ export function SidebarNav({ role, className }: { role: MembershipRole; classNam
               >
                 <span
                   className={cn(
-                    "flex size-6 shrink-0 items-center justify-center rounded-md",
+                    "flex size-6 shrink-0 items-center justify-center rounded-icon",
                     active ? "bg-sidebar-primary-foreground/15" : "bg-sidebar-accent/70"
                   )}
                 >

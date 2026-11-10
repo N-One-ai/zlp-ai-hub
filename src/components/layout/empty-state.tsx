@@ -19,14 +19,14 @@ export function EmptyState({
   return (
     <Card>
       <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
-        <div className="flex size-12 items-center justify-center rounded-xl bg-accent/15 text-accent">
+        <div className="flex size-12 items-center justify-center rounded-icon bg-accent/15 text-accent">
           <Icon className="size-5" />
         </div>
         <div>
           <p className="text-sm font-medium">{title}</p>
           <p className="text-sm text-muted-foreground mt-0.5 max-w-sm">{description}</p>
         </div>
-        {action && <div className="flex items-center gap-2 mt-1">{action}</div>}
+        {action && <div className="flex flex-wrap items-center justify-center gap-2 mt-3">{action}</div>}
       </CardContent>
     </Card>
   );
