@@ -18,8 +18,10 @@ import { z } from "zod";
 // not a pixel width/height (see providers/marketing-studio-provider.ts) —
 // so it's a THIRD, equally mutually-exclusive size source alongside
 // sizePresetId/exactSize, never silently derived from one of those.
-const MARKETING_STUDIO_ASPECT_RATIOS = ["auto", "1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16", "21:9"] as const;
-const MARKETING_STUDIO_RESOLUTIONS = ["1k", "2k", "4k"] as const;
+// Exported so other callers building the same request shape (e.g.
+// character-actions.ts) reuse this exact enum instead of duplicating it.
+export const MARKETING_STUDIO_ASPECT_RATIOS = ["auto", "1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16", "21:9"] as const;
+export const MARKETING_STUDIO_RESOLUTIONS = ["1k", "2k", "4k"] as const;
 
 export const generateImageInputSchema = z
   .object({

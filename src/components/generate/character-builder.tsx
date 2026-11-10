@@ -27,6 +27,8 @@ import {
   Wand2,
   Check,
   Sparkle,
+  SquarePen,
+  Grid3x3,
   type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -52,7 +54,6 @@ import {
   AlertDialogAction,
   AlertDialogCancel,
 } from "@/components/ui/alert-dialog";
-import { SizePresetPicker } from "@/components/brand/size-preset-picker";
 import { DownloadAssetButton } from "@/components/library/download-asset-button";
 import { ModelPicker } from "./model-picker";
 import { CharCounter } from "./char-counter";
@@ -76,6 +77,7 @@ import {
   appearanceLabel,
   type CharacterAppearanceOption,
 } from "@/lib/generation/character-appearance";
+import { OUTFIT_PRESETS, DEFAULT_OUTFIT_PRESET_ID, outfitPresetLabel } from "@/lib/generation/character-outfit";
 import { AUTO_MODEL_ID, modelLabel, type ModelMeta } from "@/lib/generation/model-meta";
 import {
   CHARACTER_ETHNICITY_LABEL,
@@ -111,7 +113,6 @@ const MAX_OUTFIT_LENGTH = 400;
 const MAX_STYLE_LENGTH = 200;
 const MAX_NEGATIVE_PROMPT_LENGTH = 500;
 const UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
-const MAX_OUTFITS = 5;
 const TAG_REGEX = /^[a-zA-Z0-9_.]+$/;
 const ETHNICITY_OPTIONS: CharacterEthnicity[] = ["vietnamese", "asian", "european"];
 const STYLE_ICONS: Record<CharacterStyleId, LucideIcon> = {
@@ -150,16 +151,11 @@ interface AiFacePreview {
   isDemo: boolean;
 }
 
-interface OutfitReferenceImage {
+type OutfitMode = "preset" | "custom" | "upload";
+
+interface OutfitUploadedImage {
   url: string;
   fileName: string;
-}
-
-interface OutfitEntry {
-  id: string;
-  label: string;
-  description: string;
-  referenceImage: OutfitReferenceImage | null;
 }
 
 function SectionHeading({
@@ -246,6 +242,52 @@ function aspectRatioLabel(width: number, height: number): string {
   return `${width / d}:${height / d}`;
 }
 
+/** The 5 standard ratios shown as chips in "Size ảnh" — all 5 are always
+ * selectable. When the workspace has a size preset of that exact ratio,
+ * picking the chip uses that preset's own (authoritative) pixel
+ * dimensions; otherwise the request falls back to `exactSize` (most
+ * models — each adapter further snaps to its own real supported size,
+ * see pixelsForRatio below) or `aspectRatio`+`resolution` for Marketing
+ * Studio specifically (its real API has no width/height param at all —
+ * see character-actions.ts's resolveSizeFields, the exact same logic
+ * mirrored client-side here only for display purposes). */
+const ASPECT_RATIO_CHIPS: { ratio: string; label: string; w: number; h: number }[] = [
+  { ratio: "16:9", label: "16:9 Ngang", w: 16, h: 9 },
+  { ratio: "4:3", label: "4:3", w: 4, h: 3 },
+  { ratio: "1:1", label: "1:1 Vuông", w: 1, h: 1 },
+  { ratio: "3:4", label: "3:4 Dọc", w: 3, h: 4 },
+  { ratio: "9:16", label: "9:16 Dọc", w: 9, h: 16 },
+];
+const DEFAULT_RATIO = "1:1";
+
+/** Pixel size for a ratio with no matching workspace preset — a baseline
+ * long edge, scaled to the exact ratio. Never sent as-is blindly: Higgsfield
+ * and OpenAI's own adapters snap this to their real nearest supported size
+ * server-side (see providers/higgsfield-provider.ts, openai-provider.ts);
+ * Gemini accepts arbitrary pixel sizes directly, so this IS what it receives. */
+function pixelsForRatio(w: number, h: number): { width: number; height: number } {
+  const longEdge = 1024;
+  return w >= h ? { width: longEdge, height: Math.round((longEdge * h) / w) } : { width: Math.round((longEdge * w) / h), height: longEdge };
+}
+
+/** Small outline rectangle proportioned to the real ratio — decorative,
+ * not a literal lucide icon, since no single icon set covers 5 arbitrary
+ * aspect ratios; this stays visually consistent with the rest of the
+ * design system (just a bordered shape, same stroke-only treatment as
+ * lucide icons elsewhere in this file). */
+function AspectRatioGlyph({ w, h, active }: { w: number; h: number; active: boolean }) {
+  const maxDim = 16;
+  const ratio = w / h;
+  const width = ratio >= 1 ? maxDim : Math.round(maxDim * ratio);
+  const height = ratio >= 1 ? Math.round(maxDim / ratio) : maxDim;
+  return (
+    <span
+      className={cn("inline-block shrink-0 rounded-[2px] border-[1.5px]", active ? "border-primary" : "border-muted-foreground/60")}
+      style={{ width, height }}
+    />
+  );
+}
+
 /** Bounded, aspect-ratio-correct image — never stretches/crops: the
  * wrapper's own aspect-ratio matches the real output size once known
  * (object-contain inside it never needs to crop), and falls back to a
@@ -325,13 +367,23 @@ export function CharacterBuilder({
   const [showNegativePrompt, setShowNegativePrompt] = useState(false);
   const [negativePrompt, setNegativePrompt] = useState("");
 
-  // Step 5 — Trang phục (0+ named outfit sets, one active per generation)
-  const [outfits, setOutfits] = useState<OutfitEntry[]>([]);
-  const [activeOutfitId, setActiveOutfitId] = useState<string | null>(null);
-  const [uploadingOutfitId, setUploadingOutfitId] = useState<string | null>(null);
+  // Step 5 — Trang phục: 1 trong 3 chế độ (gợi ý sẵn / tự nhập / tải ảnh),
+  // không phải nhiều bộ cùng lúc — mỗi chế độ ghi vào đúng cặp trường
+  // outfitDescription/outfitReferenceImageUrl đã có sẵn ở createCharacterSheet.
+  const [outfitMode, setOutfitMode] = useState<OutfitMode>("preset");
+  const [outfitPresetId, setOutfitPresetId] = useState(DEFAULT_OUTFIT_PRESET_ID);
+  const [outfitCustomText, setOutfitCustomText] = useState("");
+  const [outfitUploadedImage, setOutfitUploadedImage] = useState<OutfitUploadedImage | null>(null);
+  const [uploadingOutfitImage, setUploadingOutfitImage] = useState(false);
 
-  // Step 6 — Khung ảnh
-  const [sizePresetId, setSizePresetId] = useState<string>(presets[0]?.id ?? "");
+  // Step 6 — Size ảnh: the ratio is the primary choice, always selectable
+  // regardless of which workspace presets exist (see resolveSizeFields
+  // below for how a ratio with no matching preset still resolves to a
+  // real, model-correct size).
+  const [aspectRatioChoice, setAspectRatioChoice] = useState<string>(() => {
+    const initial = presets[0] ? aspectRatioLabel(presets[0].width, presets[0].height) : DEFAULT_RATIO;
+    return ASPECT_RATIO_CHIPS.some((c) => c.ratio === initial) ? initial : DEFAULT_RATIO;
+  });
 
   // Số ảnh + Mô hình AI
   const defaultModel = models.find((m) => m.id === HIGGSFIELD_MODEL_ID)?.id ?? models[0]?.id ?? AUTO_MODEL_ID;
@@ -370,12 +422,31 @@ export function CharacterBuilder({
     setSheetsStatus("idle");
   }
 
-  const selectedPreset = presets.find((p) => p.id === sizePresetId);
   const selectedModelMeta = models.find((m) => m.id === model);
   const modelSupportsFaceReference = (selectedModelMeta?.maxReferenceImages ?? (model === AUTO_MODEL_ID ? 1 : 0)) >= 1;
   const isMarketingStudioSelected = model === MARKETING_STUDIO_MODEL_ID;
+  const selectedRatioChip = ASPECT_RATIO_CHIPS.find((c) => c.ratio === aspectRatioChoice)!;
+  // The workspace preset matching the chosen ratio, if any — exact,
+  // authoritative dimensions take priority over the computed fallback.
+  const matchingPreset = presets.find((p) => aspectRatioLabel(p.width, p.height) === aspectRatioChoice);
+  // What actually gets sent to createCharacterSheet()/generateCharacterFace()
+  // — mirrors resolveSizeFields() in character-actions.ts exactly, so the
+  // size shown here is always the size that's really requested, never a
+  // UI-only approximation.
+  const sizeFieldsToSend = matchingPreset
+    ? { sizePresetId: matchingPreset.id }
+    : isMarketingStudioSelected
+      ? { aspectRatio: aspectRatioChoice, resolution: "1k" }
+      : { exactSize: pixelsForRatio(selectedRatioChip.w, selectedRatioChip.h) };
   const negativePromptOverLimit = negativePrompt.length > MAX_NEGATIVE_PROMPT_LENGTH;
-  const activeOutfit = outfits.find((o) => o.id === activeOutfitId) ?? null;
+
+  // What actually gets sent, per outfit mode — "upload" only ever sends
+  // the image (no text), "preset"/"custom" only ever send text (no
+  // image); never both, so there's no ambiguity about which one the
+  // server should prefer.
+  const outfitDescriptionToSend =
+    outfitMode === "preset" ? outfitPresetLabel(outfitPresetId) : outfitMode === "custom" ? outfitCustomText.trim() : "";
+  const outfitImageToSend = outfitMode === "upload" ? outfitUploadedImage : null;
 
   // Composed from the 3 chip categories (each "" when "Tự nhiên"/default is
   // picked) + free-text notes — this is what actually gets sent as
@@ -407,10 +478,20 @@ export function CharacterBuilder({
     .filter(Boolean)
     .join(" · ") || "Mặc định";
   const outfitSummary =
-    outfits.length === 0 ? "Chưa có bộ nào" : `${outfits.length} bộ${activeOutfit ? ` · đang dùng ${activeOutfit.label}` : ""}`;
-  const sizeSummary = selectedPreset
-    ? `${aspectRatioLabel(selectedPreset.width, selectedPreset.height)} · ${selectedPreset.width}×${selectedPreset.height}px`
-    : "Chưa chọn";
+    outfitMode === "preset"
+      ? outfitPresetLabel(outfitPresetId)
+      : outfitMode === "custom"
+        ? outfitCustomText.trim()
+          ? truncateLabel(outfitCustomText, 24)
+          : "Tự nhập — chưa có mô tả"
+        : outfitUploadedImage
+          ? "Ảnh tải lên"
+          : "Chưa có ảnh";
+  const sizeSummary = matchingPreset
+    ? `${aspectRatioChoice} · ${matchingPreset.width}×${matchingPreset.height}px`
+    : isMarketingStudioSelected
+      ? `${aspectRatioChoice} · 1K`
+      : `${aspectRatioChoice} · ước lượng`;
 
   const tagTrimmed = tagName.trim();
   const tagDuplicate =
@@ -475,7 +556,7 @@ export function CharacterBuilder({
     }
   }
 
-  async function handleUploadOutfitImage(outfitId: string, e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleUploadOutfitImage(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
@@ -483,40 +564,21 @@ export function CharacterBuilder({
       toast.error("File quá lớn. Tối đa 10MB.");
       return;
     }
-    setUploadingOutfitId(outfitId);
+    setUploadingOutfitImage(true);
     try {
       const result = await uploadReferenceImage(file);
       if (!result.ok) {
         toast.error(result.error.message);
         return;
       }
-      setOutfits((prev) =>
-        prev.map((o) => (o.id === outfitId ? { ...o, referenceImage: { url: result.data.url, fileName: file.name } } : o))
-      );
+      setOutfitUploadedImage({ url: result.data.url, fileName: file.name });
     } finally {
-      setUploadingOutfitId(null);
+      setUploadingOutfitImage(false);
     }
   }
 
-  function addOutfit() {
-    if (outfits.length >= MAX_OUTFITS) return;
-    const id = crypto.randomUUID();
-    const entry: OutfitEntry = { id, label: `Bộ ${outfits.length + 1}`, description: "", referenceImage: null };
-    setOutfits((prev) => [...prev, entry]);
-    setActiveOutfitId(id);
-  }
-
-  function updateOutfit(id: string, patch: Partial<Pick<OutfitEntry, "description" | "referenceImage">>) {
-    setOutfits((prev) => prev.map((o) => (o.id === id ? { ...o, ...patch } : o)));
-  }
-
-  function removeOutfit(id: string) {
-    setOutfits((prev) => prev.filter((o) => o.id !== id));
-    setActiveOutfitId((prev) => (prev === id ? null : prev));
-  }
-
   async function handleGenerateAiFace() {
-    if (!brandId || !sizePresetId || generatingFace) return;
+    if (!brandId || generatingFace) return;
     setGeneratingFace(true);
     setAiFacePreview(null);
     setStatusText("Đang tạo khuôn mặt bằng AI...");
@@ -530,7 +592,7 @@ export function CharacterBuilder({
         customStyle,
         appearanceDescription,
         model,
-        sizePresetId,
+        ...sizeFieldsToSend,
       });
       if (!result.ok) {
         toast.error(result.error.message);
@@ -556,7 +618,6 @@ export function CharacterBuilder({
   const faceReady = faceSource === "upload" ? Boolean(uploadedFace && consent) : Boolean(aiFacePreview);
   const canSubmit =
     Boolean(brandId) &&
-    Boolean(sizePresetId) &&
     !appearanceOverLimit &&
     !negativePromptOverLimit &&
     (isNew ? tagTrimmed.length >= 2 && !tagError && faceReady : true) &&
@@ -624,22 +685,22 @@ export function CharacterBuilder({
         characterId,
         brandId,
         model,
-        sizePresetId,
+        ...sizeFieldsToSend,
         count: Number(count),
         style,
         customStyle,
         appearanceDescription,
-        outfitDescription: activeOutfit?.description ?? "",
-        outfitReferenceImageUrl: activeOutfit?.referenceImage?.url,
+        outfitDescription: outfitDescriptionToSend,
+        outfitReferenceImageUrl: outfitImageToSend?.url,
         negativePrompt,
       });
       if (!sheetResult.ok) {
         toast.error(sheetResult.error.message);
         return;
       }
-      if (activeOutfit?.referenceImage && !sheetResult.data.outfitImageSent) {
+      if (outfitImageToSend && !sheetResult.data.outfitImageSent) {
         toast.message(
-          `Model "${modelLabel(model)}" chỉ nhận 1 ảnh tham chiếu (khuôn mặt) — ảnh trang phục của "${activeOutfit.label}" không được gửi, chỉ dùng mô tả văn bản.`
+          `Model "${modelLabel(model)}" chỉ nhận 1 ảnh tham chiếu (khuôn mặt) — ảnh trang phục không được gửi, hãy đổi sang "Tự nhập" để mô tả bằng văn bản.`
         );
       }
 
@@ -775,7 +836,7 @@ export function CharacterBuilder({
     }
   }
 
-  const aspectLabel = selectedPreset ? `${selectedPreset.width}×${selectedPreset.height}` : "—";
+  const aspectLabel = matchingPreset ? `${matchingPreset.width}×${matchingPreset.height}` : aspectRatioChoice;
   const summaryViews = CHARACTER_VIEWS.slice(0, Number(count))
     .map((v) => CHARACTER_VIEW_LABEL[v])
     .join(", ");
@@ -1065,7 +1126,7 @@ export function CharacterBuilder({
                             </div>
                           </div>
                         ) : (
-                          <Button type="button" size="sm" variant="outline" disabled={generatingFace || !brandId || !sizePresetId} onClick={handleGenerateAiFace}>
+                          <Button type="button" size="sm" variant="outline" disabled={generatingFace || !brandId} onClick={handleGenerateAiFace}>
                             {generatingFace ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
                             {generatingFace ? "Đang tạo..." : "Tạo khuôn mặt bằng AI"}
                           </Button>
@@ -1267,94 +1328,119 @@ export function CharacterBuilder({
           <Card className="p-0 overflow-visible">
             <Collapsible defaultOpen className="p-4 flex flex-col gap-3">
               <CollapsibleTrigger>
-                <SectionHeading step={5} title="Trang phục" summary={outfitSummary} />
+                <SectionHeading step={5} title="Trang phục" summary={outfitSummary} icon={Shirt} />
               </CollapsibleTrigger>
               <CollapsiblePanel className="flex flex-col gap-3">
-                {outfits.length === 0 && (
-                  <p className="text-xs text-muted-foreground">Chưa có bộ trang phục nào — ngoại hình sẽ dùng mô tả mặc định ở trên.</p>
-                )}
-                {outfits.map((o) => (
-                  <div
-                    key={o.id}
-                    className={cn(
-                      "flex flex-col gap-2 rounded-lg border p-2.5",
-                      activeOutfitId === o.id ? "border-primary ring-1 ring-primary" : "border-border"
-                    )}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <button type="button" onClick={() => setActiveOutfitId(o.id)} className="flex items-center gap-1.5 text-xs font-medium">
-                        <span
-                          className={cn(
-                            "flex size-4 items-center justify-center rounded-full border",
-                            activeOutfitId === o.id ? "border-primary bg-primary" : "border-input"
-                          )}
-                        >
-                          {activeOutfitId === o.id && <span className="size-1.5 rounded-full bg-primary-foreground" />}
-                        </span>
-                        {o.label}
-                        {activeOutfitId === o.id && <span className="text-[10px] font-normal text-primary">· đang dùng</span>}
-                      </button>
-                      <Button type="button" size="icon-xs" variant="ghost" aria-label={`Xoá ${o.label}`} onClick={() => removeOutfit(o.id)}>
-                        <Trash2 className="size-3" />
-                      </Button>
+                <div className="flex flex-col gap-2">
+                  <FieldLabel>Chế độ trang phục</FieldLabel>
+                  <div className="grid grid-cols-3 gap-1.5 rounded-2xl border border-border p-1.5">
+                    <Button type="button" size="sm" variant={outfitMode === "preset" ? "default" : "outline"} onClick={() => setOutfitMode("preset")}>
+                      <Sparkle className="size-3.5" />
+                      Gợi ý sẵn
+                    </Button>
+                    <Button type="button" size="sm" variant={outfitMode === "custom" ? "default" : "outline"} onClick={() => setOutfitMode("custom")}>
+                      <SquarePen className="size-3.5" />
+                      Tự nhập
+                    </Button>
+                    <Button type="button" size="sm" variant={outfitMode === "upload" ? "default" : "outline"} onClick={() => setOutfitMode("upload")}>
+                      <Upload className="size-3.5" />
+                      Tải ảnh
+                    </Button>
+                  </div>
+                </div>
+
+                {outfitMode === "preset" && (
+                  <div className="flex flex-col gap-2">
+                    <FieldLabel>Bộ trang phục gợi ý</FieldLabel>
+                    <div className="flex flex-col gap-1.5">
+                      {OUTFIT_PRESETS.map((p) => {
+                        const selected = outfitPresetId === p.id;
+                        return (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => setOutfitPresetId(p.id)}
+                            aria-pressed={selected}
+                            className={cn(
+                              "flex items-center gap-2 rounded-full border px-4 py-2.5 text-left text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                              selected
+                                ? "border-primary bg-primary/10 text-primary"
+                                : "border-transparent bg-muted/60 text-muted-foreground hover:bg-muted"
+                            )}
+                          >
+                            {selected && <Check className="size-3.5 shrink-0" />}
+                            {p.label}
+                          </button>
+                        );
+                      })}
                     </div>
+                  </div>
+                )}
+
+                {outfitMode === "custom" && (
+                  <div className="flex flex-col gap-1.5">
+                    <FieldLabel>Mô tả trang phục</FieldLabel>
                     <Textarea
-                      value={o.description}
-                      onChange={(e) => updateOutfit(o.id, { description: e.target.value })}
+                      value={outfitCustomText}
+                      onChange={(e) => setOutfitCustomText(e.target.value)}
                       placeholder="VD: áo khoác denim phối họa tiết hoa, chân váy xếp ly, giày boots da nâu..."
                       maxLength={MAX_OUTFIT_LENGTH}
                     />
-                    {o.referenceImage ? (
-                      <div className="flex items-center gap-2">
+                    <div className="flex justify-end">
+                      <CharCounter current={outfitCustomText.length} max={MAX_OUTFIT_LENGTH} />
+                    </div>
+                  </div>
+                )}
+
+                {outfitMode === "upload" && (
+                  <div className="flex flex-col gap-1.5">
+                    <FieldLabel>Ảnh tham chiếu trang phục</FieldLabel>
+                    {outfitUploadedImage ? (
+                      <div className="flex items-center gap-2 rounded-lg border border-input bg-muted/30 p-2">
                         {/* eslint-disable-next-line @next/next/no-img-element -- short-lived signed URL */}
-                        <img src={o.referenceImage.url} alt={o.referenceImage.fileName} className="size-8 rounded object-cover" />
-                        <span className="truncate text-xs text-muted-foreground">{o.referenceImage.fileName}</span>
+                        <img src={outfitUploadedImage.url} alt={outfitUploadedImage.fileName} className="size-10 rounded object-cover" />
+                        <span className="truncate text-xs text-muted-foreground">{outfitUploadedImage.fileName}</span>
                         <Button
                           type="button"
                           size="icon-xs"
                           variant="ghost"
                           className="ml-auto"
                           aria-label="Xoá ảnh tham chiếu trang phục"
-                          onClick={() => updateOutfit(o.id, { referenceImage: null })}
+                          onClick={() => setOutfitUploadedImage(null)}
                         >
-                          <Trash2 className="size-3" />
+                          <Trash2 className="size-3.5" />
                         </Button>
                       </div>
                     ) : (
                       <>
                         <input
-                          id={`outfit-ref-${o.id}`}
+                          id="outfit-ref-upload"
                           type="file"
                           accept="image/png,image/jpeg,image/webp"
                           className="hidden"
-                          onChange={(e) => handleUploadOutfitImage(o.id, e)}
+                          onChange={handleUploadOutfitImage}
                         />
                         <Button
                           type="button"
                           size="sm"
                           variant="outline"
-                          disabled={uploadingOutfitId === o.id}
-                          onClick={() => document.getElementById(`outfit-ref-${o.id}`)?.click()}
+                          disabled={uploadingOutfitImage}
+                          onClick={() => document.getElementById("outfit-ref-upload")?.click()}
                         >
-                          {uploadingOutfitId === o.id ? <Loader2 className="size-3.5 animate-spin" /> : <Upload className="size-3.5" />}
-                          Thêm ảnh tham chiếu trang phục (tuỳ chọn)
+                          {uploadingOutfitImage ? <Loader2 className="size-3.5 animate-spin" /> : <Upload className="size-3.5" />}
+                          Chọn ảnh (PNG, JPG, WEBP — tối đa 10MB)
                         </Button>
                       </>
                     )}
-                    {o.referenceImage && !isMarketingStudioSelected && (
+                    {outfitUploadedImage && !isMarketingStudioSelected && (
                       <p className="flex items-start gap-1 text-[11px] text-amber-600 dark:text-amber-500">
                         <AlertTriangle className="mt-0.5 size-3 shrink-0" />
-                        Model đang chọn chỉ nhận 1 ảnh tham chiếu (khuôn mặt) — ảnh này sẽ không được gửi nếu đây là bộ
-                        đang dùng, chỉ mô tả văn bản được áp dụng. Chọn Higgsfield Marketing Studio ở mục Model để gửi
-                        cả hai ảnh.
+                        Model đang chọn chỉ nhận 1 ảnh tham chiếu (khuôn mặt) — ảnh này sẽ không được gửi. Chọn
+                        Higgsfield Marketing Studio ở mục Model để gửi cả hai ảnh.
                       </p>
                     )}
                   </div>
-                ))}
-                <Button type="button" size="sm" variant="outline" disabled={outfits.length >= MAX_OUTFITS} onClick={addOutfit}>
-                  <Shirt className="size-3.5" />
-                  Thêm bộ trang phục
-                </Button>
+                )}
               </CollapsiblePanel>
             </Collapsible>
           </Card>
@@ -1362,13 +1448,51 @@ export function CharacterBuilder({
           <Card className="p-0 overflow-visible">
             <Collapsible defaultOpen className="p-4 flex flex-col gap-3">
               <CollapsibleTrigger>
-                <SectionHeading step={6} title="Khung ảnh" summary={sizeSummary} />
+                <SectionHeading step={6} title="Size ảnh" summary={sizeSummary} icon={Grid3x3} />
               </CollapsibleTrigger>
               <CollapsiblePanel className="flex flex-col gap-3">
-                <div className="flex flex-col gap-1.5">
-                  <Label className="text-xs text-muted-foreground">Chỉ các tỷ lệ/kích thước có sẵn trong workspace</Label>
-                  <SizePresetPicker presets={presets} value={sizePresetId} onChange={setSizePresetId} />
-                  {presets.length === 0 && <p className="text-xs text-destructive">Workspace chưa có preset kích thước nào.</p>}
+                <div className="flex flex-col gap-2">
+                  <FieldLabel>Tỷ lệ ảnh</FieldLabel>
+                  <div className="flex flex-wrap gap-1.5">
+                    {ASPECT_RATIO_CHIPS.map((chip) => {
+                      const selected = chip.ratio === aspectRatioChoice;
+                      return (
+                        <button
+                          key={chip.ratio}
+                          type="button"
+                          onClick={() => setAspectRatioChoice(chip.ratio)}
+                          aria-pressed={selected}
+                          className={cn(
+                            "inline-flex items-center gap-2 rounded-full border px-3.5 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                            selected
+                              ? "border-primary bg-primary/10 text-primary"
+                              : "border-transparent bg-muted/60 text-muted-foreground hover:bg-muted"
+                          )}
+                        >
+                          <AspectRatioGlyph w={chip.w} h={chip.h} active={selected} />
+                          {chip.label}
+                          {selected && <Check className="size-3.5" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {matchingPreset ? (
+                    <p className="text-xs text-muted-foreground">
+                      Đang dùng: {matchingPreset.name} — {matchingPreset.width}×{matchingPreset.height}px
+                    </p>
+                  ) : isMarketingStudioSelected ? (
+                    <p className="text-xs text-muted-foreground">
+                      Chưa có preset {aspectRatioChoice} trong workspace — gửi tỷ lệ {aspectRatioChoice} · độ phân giải 1K
+                      thẳng tới Higgsfield Marketing Studio (model hỗ trợ tỷ lệ trực tiếp, không cần preset).
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Chưa có preset {aspectRatioChoice} trong workspace — dùng kích thước ước lượng{" "}
+                      {pixelsForRatio(selectedRatioChip.w, selectedRatioChip.h).width}×
+                      {pixelsForRatio(selectedRatioChip.w, selectedRatioChip.h).height}px, model đã chọn sẽ tự làm tròn
+                      về kích thước thật gần nhất mà model đó hỗ trợ.
+                    </p>
+                  )}
                 </div>
               </CollapsiblePanel>
             </Collapsible>

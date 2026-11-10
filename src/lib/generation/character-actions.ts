@@ -18,6 +18,7 @@ import {
 } from "@/types/character";
 import { getCharacterSheets } from "./character-queries";
 import { resolveStylePromptText } from "./character-style";
+import { MARKETING_STUDIO_ASPECT_RATIOS, MARKETING_STUDIO_RESOLUTIONS } from "./schema";
 
 const GENERIC_ERROR = "Đã có lỗi xảy ra. Vui lòng thử lại.";
 const UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
@@ -40,6 +41,33 @@ const STYLE_IDS = ["photo", "illustration", "cartoon", "cinematic", "editorial",
 const GENDER_IDS = ["male", "female"] as const;
 const ETHNICITY_IDS = ["vietnamese", "asian", "european"] as const;
 const ageSchema = z.number().int().min(CHARACTER_MIN_AGE).max(CHARACTER_MAX_AGE);
+
+// The same 3 mutually-exclusive size sources generateImageInputSchema
+// (schema.ts) accepts for the main Tạo ảnh flow — "Size ảnh" in Character
+// Builder needs the same flexibility (a chosen aspect ratio may not have
+// a matching workspace preset), not a 4th, Character-Builder-only size
+// concept. `sizePresetId` wins when a real preset of that ratio exists
+// (exact, authoritative dimensions); otherwise `exactSize` (most models —
+// each adapter further snaps to its own real supported size, e.g.
+// Higgsfield/OpenAI, so an approximate pixel value here is never sent
+// as-is to a model that can't actually produce it) or `aspectRatio`+
+// `resolution` (Marketing Studio only — its real API has no width/height
+// param at all, see providers/marketing-studio-provider.ts).
+const sizeFieldsSchema = z.object({
+  sizePresetId: z.string().uuid().optional(),
+  exactSize: z.object({ width: z.number().int().positive(), height: z.number().int().positive() }).optional(),
+  aspectRatio: z.enum(MARKETING_STUDIO_ASPECT_RATIOS).optional(),
+  resolution: z.enum(MARKETING_STUDIO_RESOLUTIONS).optional(),
+});
+type SizeFields = z.infer<typeof sizeFieldsSchema>;
+function hasExactlyOneSizeSource(data: SizeFields): boolean {
+  return [Boolean(data.sizePresetId), Boolean(data.exactSize), Boolean(data.aspectRatio)].filter(Boolean).length === 1;
+}
+function resolveSizeFields(input: SizeFields) {
+  if (input.sizePresetId) return { sizePresetId: input.sizePresetId };
+  if (input.exactSize) return { exactSize: input.exactSize };
+  return { aspectRatio: input.aspectRatio, resolution: input.resolution ?? "1k" };
+}
 
 const tagNameSchema = z
   .string()
@@ -152,17 +180,19 @@ export async function uploadCharacterFace(file: File): Promise<ActionResult<{ pa
   return ok({ path, url });
 }
 
-const generateCharacterFaceSchema = z.object({
-  brandId: z.string().uuid(),
-  gender: z.enum(GENDER_IDS),
-  ethnicity: z.enum(ETHNICITY_IDS).default("vietnamese"),
-  age: ageSchema.default(22),
-  style: z.enum(STYLE_IDS).default("photo"),
-  customStyle: z.string().trim().max(MAX_STYLE_LENGTH, "Mô tả phong cách quá dài.").default(""),
-  appearanceDescription: z.string().trim().max(MAX_APPEARANCE_LENGTH, "Mô tả ngoại hình quá dài.").default(""),
-  model: z.string().trim().min(1).default("auto"),
-  sizePresetId: z.string().uuid(),
-});
+const generateCharacterFaceSchema = z
+  .object({
+    brandId: z.string().uuid(),
+    gender: z.enum(GENDER_IDS),
+    ethnicity: z.enum(ETHNICITY_IDS).default("vietnamese"),
+    age: ageSchema.default(22),
+    style: z.enum(STYLE_IDS).default("photo"),
+    customStyle: z.string().trim().max(MAX_STYLE_LENGTH, "Mô tả phong cách quá dài.").default(""),
+    appearanceDescription: z.string().trim().max(MAX_APPEARANCE_LENGTH, "Mô tả ngoại hình quá dài.").default(""),
+    model: z.string().trim().min(1).default("auto"),
+  })
+  .merge(sizeFieldsSchema)
+  .refine(hasExactlyOneSizeSource, { message: "Cần chọn đúng một kích thước.", path: ["sizePresetId"] });
 
 /** "AI tự tạo" face path — generates ONE portrait through the exact same
  * generateImages() pipeline every other image in this app goes through
@@ -186,7 +216,7 @@ export async function generateCharacterFace(rawInput: unknown): Promise<ActionRe
       input.appearanceDescription
     ),
     negativePrompt: "",
-    sizePresetId: input.sizePresetId,
+    ...resolveSizeFields(input),
     count: 1,
     model: input.model,
   });
@@ -362,22 +392,24 @@ export async function renameCharacter(rawInput: unknown): Promise<ActionResult<n
   return ok(null);
 }
 
-const createCharacterSheetSchema = z.object({
-  characterId: z.string().uuid(),
-  brandId: z.string().uuid(),
-  model: z.string().trim().min(1).default("auto"),
-  sizePresetId: z.string().uuid(),
-  count: z.number().int().min(1).max(4).default(2),
-  style: z.enum(STYLE_IDS).default("photo"),
-  customStyle: z.string().trim().max(MAX_STYLE_LENGTH, "Mô tả phong cách quá dài.").default(""),
-  appearanceDescription: z.string().trim().max(MAX_APPEARANCE_LENGTH, "Mô tả ngoại hình quá dài.").default(""),
-  outfitDescription: z.string().trim().max(MAX_OUTFIT_LENGTH, "Mô tả trang phục quá dài.").default(""),
-  // A signed URL to an outfit reference image already uploaded to our own
-  // Storage via uploadReferenceImage() — same SSRF constraint as every
-  // other reference-image field, re-checked by generateImages() itself.
-  outfitReferenceImageUrl: z.string().url().optional(),
-  negativePrompt: z.string().trim().max(MAX_NEGATIVE_PROMPT_LENGTH, "Phần loại trừ quá dài.").default(""),
-});
+const createCharacterSheetSchema = z
+  .object({
+    characterId: z.string().uuid(),
+    brandId: z.string().uuid(),
+    model: z.string().trim().min(1).default("auto"),
+    count: z.number().int().min(1).max(4).default(2),
+    style: z.enum(STYLE_IDS).default("photo"),
+    customStyle: z.string().trim().max(MAX_STYLE_LENGTH, "Mô tả phong cách quá dài.").default(""),
+    appearanceDescription: z.string().trim().max(MAX_APPEARANCE_LENGTH, "Mô tả ngoại hình quá dài.").default(""),
+    outfitDescription: z.string().trim().max(MAX_OUTFIT_LENGTH, "Mô tả trang phục quá dài.").default(""),
+    // A signed URL to an outfit reference image already uploaded to our own
+    // Storage via uploadReferenceImage() — same SSRF constraint as every
+    // other reference-image field, re-checked by generateImages() itself.
+    outfitReferenceImageUrl: z.string().url().optional(),
+    negativePrompt: z.string().trim().max(MAX_NEGATIVE_PROMPT_LENGTH, "Phần loại trừ quá dài.").default(""),
+  })
+  .merge(sizeFieldsSchema)
+  .refine(hasExactlyOneSizeSource, { message: "Cần chọn đúng một kích thước.", path: ["sizePresetId"] });
 
 export interface CharacterSheetViewResult {
   view: CharacterView;
@@ -452,7 +484,7 @@ export async function createCharacterSheet(
         input.outfitDescription
       ),
       negativePrompt: input.negativePrompt,
-      sizePresetId: input.sizePresetId,
+      ...resolveSizeFields(input),
       count: 1,
       model: input.model,
       ...referenceFields,
