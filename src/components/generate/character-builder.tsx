@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import {
   Loader2,
@@ -313,6 +313,13 @@ export function CharacterBuilder({
   const [selectedId, setSelectedId] = useState<string | null>(initialCharacters[0]?.id ?? null);
   const isNew = selectedId === null;
   const selectedCharacter = characters.find((c) => c.id === selectedId) ?? null;
+  // The settings column below the character-pill row scrolls independently
+  // (see its lg:overflow-y-auto wrapper) — switching characters swaps its
+  // content but previously left the old scrollTop in place, so the new
+  // card could render partly above the visible scroll area and look cut
+  // off. Reset to top on every switch so the newly selected card's info is
+  // never hidden by a stale scroll position.
+  const settingsScrollRef = useRef<HTMLDivElement>(null);
 
   // Step 1 — Nhân vật (gender + age are both locked identity traits, same
   // as ethnicity below — see resetFaceState's comment)
@@ -506,6 +513,7 @@ export function CharacterBuilder({
     setGender("female");
     setAge(CHARACTER_DEFAULT_AGE);
     resetFaceState();
+    settingsScrollRef.current?.scrollTo({ top: 0 });
   }
 
   function selectCharacter(id: string) {
@@ -514,6 +522,7 @@ export function CharacterBuilder({
     setActiveSheet(null);
     setRenaming(false);
     void loadSheets(id);
+    settingsScrollRef.current?.scrollTo({ top: 0 });
   }
 
   async function handleUploadFace(e: React.ChangeEvent<HTMLInputElement>) {
@@ -833,10 +842,13 @@ export function CharacterBuilder({
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[380px_1fr] items-start">
-        {/* Left panel — character list + form, scrolls independently from the result panel on desktop */}
-        <div className="flex flex-col gap-4 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pr-1">
+        {/* Left panel — character list + form. The pill row never scrolls
+            (always fully visible, wraps on narrow screens); only the
+            settings cards below it scroll, in their own bounded container,
+            independently from the result panel on desktop. */}
+        <div className="flex flex-col gap-4 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)]">
           {characters.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5">
+            <div className="flex shrink-0 flex-wrap items-center gap-1.5">
               <button
                 type="button"
                 onClick={startNewCharacter}
@@ -873,6 +885,22 @@ export function CharacterBuilder({
               ))}
             </div>
           )}
+
+          {/* [&>*]:shrink-0 is load-bearing, not decorative: Card (see
+              components/ui/card.tsx) ships `overflow-hidden` by default,
+              which per the flexbox spec makes a flex item's automatic
+              min-height 0 — so without this, every Card here would
+              flex-shrink below its own content height to fit this
+              container's max-height instead of actually overflowing and
+              scrolling, visibly crushing whichever card has the smallest
+              content (this is exactly what was clipping the selected-
+              character info card). Keeping each Card at shrink-0 forces
+              the container to overflow for real, which lg:overflow-y-auto
+              then scrolls as intended. */}
+          <div
+            ref={settingsScrollRef}
+            className="flex min-h-0 flex-1 flex-col gap-4 lg:overflow-y-auto lg:pr-1 [&>*]:shrink-0"
+          >
 
           {isNew ? (
             <>
@@ -1507,6 +1535,7 @@ export function CharacterBuilder({
               {!brandId && <p className="text-xs text-destructive">Workspace chưa có thương hiệu active.</p>}
             </div>
           </Card>
+          </div>
         </div>
 
         {/* Right panel — wider: main viewer + history below */}
