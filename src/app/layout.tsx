@@ -44,7 +44,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Creative Hub",
+  title: "Zalopay AI Creative Hub",
   description: "Tạo, quản lý và tải xuống hình ảnh marketing đúng nhận diện thương hiệu.",
 };
 

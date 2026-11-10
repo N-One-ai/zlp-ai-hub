@@ -19,6 +19,14 @@ import {
   CheckCircle2,
   Shirt,
   ScanFace,
+  Camera,
+  Palette,
+  Drama,
+  Clapperboard,
+  Newspaper,
+  Wand2,
+  Check,
+  Sparkle,
   type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -59,6 +67,15 @@ import {
   uploadCharacterFace,
 } from "@/lib/generation/character-actions";
 import { CHARACTER_STYLE_PRESETS, DEFAULT_CHARACTER_STYLE, characterStyleLabel, type CharacterStyleId } from "@/lib/generation/character-style";
+import {
+  HAIRSTYLE_OPTIONS,
+  BODY_TYPE_OPTIONS,
+  EXPRESSION_OPTIONS,
+  DEFAULT_APPEARANCE_OPTION_ID,
+  appearancePhrase,
+  appearanceLabel,
+  type CharacterAppearanceOption,
+} from "@/lib/generation/character-appearance";
 import { AUTO_MODEL_ID, modelLabel, type ModelMeta } from "@/lib/generation/model-meta";
 import {
   CHARACTER_ETHNICITY_LABEL,
@@ -88,7 +105,8 @@ const HIGGSFIELD_MODEL_ID = "higgsfield-soul2";
 const MARKETING_STUDIO_MODEL_ID = "higgsfield-marketing-studio";
 const POLL_INTERVAL_MS = 1_500;
 const POLL_MAX_ATTEMPTS = 100; // ~150s, same margin as ImageComposer
-const MAX_APPEARANCE_LENGTH = 600;
+const MAX_APPEARANCE_LENGTH = 600; // mirrors MAX_APPEARANCE_LENGTH in character-actions.ts (the COMPOSED description's real ceiling)
+const MAX_APPEARANCE_NOTES_LENGTH = 450; // leaves headroom in MAX_APPEARANCE_LENGTH for the 3 chip phrases once joined
 const MAX_OUTFIT_LENGTH = 400;
 const MAX_STYLE_LENGTH = 200;
 const MAX_NEGATIVE_PROMPT_LENGTH = 500;
@@ -96,6 +114,14 @@ const UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
 const MAX_OUTFITS = 5;
 const TAG_REGEX = /^[a-zA-Z0-9_.]+$/;
 const ETHNICITY_OPTIONS: CharacterEthnicity[] = ["vietnamese", "asian", "european"];
+const STYLE_ICONS: Record<CharacterStyleId, LucideIcon> = {
+  photo: Camera,
+  illustration: Palette,
+  cartoon: Drama,
+  cinematic: Clapperboard,
+  editorial: Newspaper,
+  custom: Wand2,
+};
 const DEFAULT_ETHNICITY: CharacterEthnicity = "vietnamese";
 
 function sleep(ms: number) {
@@ -167,6 +193,44 @@ function SectionHeading({
  * mock's typographic hierarchy without copying its exact chrome. */
 function FieldLabel({ children }: { children: ReactNode }) {
   return <Label className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">{children}</Label>;
+}
+
+/** Single-select chip row for one "Ngoại hình" category (Kiểu tóc/Vóc
+ * dáng/Biểu cảm) — always exactly one option active, "Tự nhiên" being the
+ * neutral default that adds nothing to the prompt. */
+function AppearanceChipGroup({
+  options,
+  value,
+  onChange,
+}: {
+  options: CharacterAppearanceOption[];
+  value: string;
+  onChange: (id: string) => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {options.map((o) => {
+        const selected = value === o.id;
+        return (
+          <button
+            key={o.id}
+            type="button"
+            onClick={() => onChange(o.id)}
+            aria-pressed={selected}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              selected
+                ? "border-primary bg-primary/10 text-primary"
+                : "border-transparent bg-muted/60 text-muted-foreground hover:bg-muted"
+            )}
+          >
+            {selected && <Check className="size-3.5" />}
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 function truncateLabel(value: string, max: number): string {
@@ -250,8 +314,14 @@ export function CharacterBuilder({
   const [style, setStyle] = useState<CharacterStyleId>(DEFAULT_CHARACTER_STYLE);
   const [customStyle, setCustomStyle] = useState("");
 
-  // Step 4 — Ngoại hình
-  const [appearanceDescription, setAppearanceDescription] = useState("");
+  // Step 4 — Ngoại hình (chip presets, composed into one description
+  // string client-side — see composeAppearanceDescription below — so the
+  // existing appearanceDescription field on generateCharacterFace()/
+  // createCharacterSheet() needed no schema change for this)
+  const [hairstyle, setHairstyle] = useState(DEFAULT_APPEARANCE_OPTION_ID);
+  const [bodyType, setBodyType] = useState(DEFAULT_APPEARANCE_OPTION_ID);
+  const [expression, setExpression] = useState(DEFAULT_APPEARANCE_OPTION_ID);
+  const [appearanceNotes, setAppearanceNotes] = useState("");
   const [showNegativePrompt, setShowNegativePrompt] = useState(false);
   const [negativePrompt, setNegativePrompt] = useState("");
 
@@ -304,9 +374,24 @@ export function CharacterBuilder({
   const selectedModelMeta = models.find((m) => m.id === model);
   const modelSupportsFaceReference = (selectedModelMeta?.maxReferenceImages ?? (model === AUTO_MODEL_ID ? 1 : 0)) >= 1;
   const isMarketingStudioSelected = model === MARKETING_STUDIO_MODEL_ID;
-  const appearanceOverLimit = appearanceDescription.length > MAX_APPEARANCE_LENGTH;
   const negativePromptOverLimit = negativePrompt.length > MAX_NEGATIVE_PROMPT_LENGTH;
   const activeOutfit = outfits.find((o) => o.id === activeOutfitId) ?? null;
+
+  // Composed from the 3 chip categories (each "" when "Tự nhiên"/default is
+  // picked) + free-text notes — this is what actually gets sent as
+  // `appearanceDescription` to generateCharacterFace()/createCharacterSheet(),
+  // no backend change needed since that field already accepted free text.
+  const appearanceDescription = [
+    appearancePhrase(HAIRSTYLE_OPTIONS, hairstyle),
+    appearancePhrase(BODY_TYPE_OPTIONS, bodyType),
+    appearancePhrase(EXPRESSION_OPTIONS, expression),
+    appearanceNotes.trim(),
+  ]
+    .filter(Boolean)
+    .join(", ");
+  // Validated against the COMPOSED string (what the server's own schema
+  // actually checks), not just the notes field alone.
+  const appearanceOverLimit = appearanceDescription.length > MAX_APPEARANCE_LENGTH;
 
   const styleSummary =
     style === "custom"
@@ -314,7 +399,13 @@ export function CharacterBuilder({
         ? `Tùy chỉnh — ${truncateLabel(customStyle, 24)}`
         : "Tùy chỉnh"
       : characterStyleLabel(style);
-  const appearanceSummary = appearanceDescription.trim() ? truncateLabel(appearanceDescription, 28) : "Mặc định";
+  const appearanceSummary = [
+    hairstyle !== DEFAULT_APPEARANCE_OPTION_ID ? appearanceLabel(HAIRSTYLE_OPTIONS, hairstyle) : null,
+    bodyType !== DEFAULT_APPEARANCE_OPTION_ID ? appearanceLabel(BODY_TYPE_OPTIONS, bodyType) : null,
+    expression !== DEFAULT_APPEARANCE_OPTION_ID ? appearanceLabel(EXPRESSION_OPTIONS, expression) : null,
+  ]
+    .filter(Boolean)
+    .join(" · ") || "Mặc định";
   const outfitSummary =
     outfits.length === 0 ? "Chưa có bộ nào" : `${outfits.length} bộ${activeOutfit ? ` · đang dùng ${activeOutfit.label}` : ""}`;
   const sizeSummary = selectedPreset
@@ -1056,12 +1147,42 @@ export function CharacterBuilder({
                 <SectionHeading step={3} title="Phong cách" summary={styleSummary} />
               </CollapsibleTrigger>
               <CollapsiblePanel className="flex flex-col gap-3">
-                <div className="flex flex-wrap gap-1.5">
-                  {CHARACTER_STYLE_PRESETS.map((p) => (
-                    <Button key={p.id} type="button" size="sm" variant={style === p.id ? "default" : "outline"} onClick={() => setStyle(p.id)}>
-                      {p.label}
-                    </Button>
-                  ))}
+                <div className="flex flex-col gap-2">
+                  <FieldLabel>Phong cách chủ đạo</FieldLabel>
+                  <div className="grid grid-cols-2 gap-2">
+                    {CHARACTER_STYLE_PRESETS.map((p) => {
+                      const Icon = STYLE_ICONS[p.id];
+                      const selected = style === p.id;
+                      return (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => setStyle(p.id)}
+                          aria-pressed={selected}
+                          className={cn(
+                            "relative flex flex-col items-start gap-1.5 rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                            selected ? "border-primary bg-primary/5 ring-1 ring-primary" : "border-border hover:bg-muted/40"
+                          )}
+                        >
+                          {selected && (
+                            <span className="absolute top-2 right-2 flex size-4 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                              <Check className="size-2.5" />
+                            </span>
+                          )}
+                          <span
+                            className={cn(
+                              "flex size-9 items-center justify-center rounded-lg",
+                              selected ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"
+                            )}
+                          >
+                            <Icon className="size-4.5" />
+                          </span>
+                          <span className={cn("text-sm font-semibold", selected && "text-primary")}>{p.label}</span>
+                          <span className="text-xs text-muted-foreground">{p.description}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
                 {style === "custom" && (
                   <Input
@@ -1078,29 +1199,44 @@ export function CharacterBuilder({
           <Card className="p-0 overflow-visible">
             <Collapsible defaultOpen className="p-4 flex flex-col gap-3">
               <CollapsibleTrigger>
-                <SectionHeading step={4} title="Ngoại hình" summary={appearanceSummary} />
+                <SectionHeading step={4} title="Ngoại hình" summary={appearanceSummary} icon={Sparkle} />
               </CollapsibleTrigger>
-              <CollapsiblePanel className="flex flex-col gap-3">
+              <CollapsiblePanel className="flex flex-col gap-4">
+                <div className="flex flex-col gap-2">
+                  <FieldLabel>Kiểu tóc</FieldLabel>
+                  <AppearanceChipGroup options={HAIRSTYLE_OPTIONS} value={hairstyle} onChange={setHairstyle} />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <FieldLabel>Vóc dáng</FieldLabel>
+                  <AppearanceChipGroup options={BODY_TYPE_OPTIONS} value={bodyType} onChange={setBodyType} />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <FieldLabel>Biểu cảm</FieldLabel>
+                  <AppearanceChipGroup options={EXPRESSION_OPTIONS} value={expression} onChange={setExpression} />
+                </div>
+
                 <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="character-appearance" className="text-xs text-muted-foreground">
-                    Mô tả tóc, khuôn mặt, vóc dáng, biểu cảm, đặc điểm nhận dạng cần giữ nhất quán
+                  <Label htmlFor="character-appearance-notes" className="text-xs text-muted-foreground">
+                    Ghi chú thêm (tuỳ chọn) — khuôn mặt, đặc điểm nhận dạng, phụ kiện...
                   </Label>
                   <Textarea
-                    id="character-appearance"
-                    value={appearanceDescription}
-                    onChange={(e) => setAppearanceDescription(e.target.value)}
-                    placeholder="VD: tóc dài đen, dáng người cân đối, biểu cảm tươi tắn, đeo khuyên tai tròn màu xanh lá..."
-                    maxLength={MAX_APPEARANCE_LENGTH}
-                    aria-invalid={appearanceOverLimit}
+                    id="character-appearance-notes"
+                    value={appearanceNotes}
+                    onChange={(e) => setAppearanceNotes(e.target.value)}
+                    placeholder="VD: đeo khuyên tai tròn màu xanh lá, có nốt ruồi nhỏ trên má..."
+                    maxLength={MAX_APPEARANCE_NOTES_LENGTH}
                   />
                   <div className="flex justify-end">
-                    <CharCounter current={appearanceDescription.length} max={MAX_APPEARANCE_LENGTH} />
+                    <CharCounter current={appearanceNotes.length} max={MAX_APPEARANCE_NOTES_LENGTH} />
                   </div>
+                  {appearanceOverLimit && (
+                    <p className="text-xs text-destructive">Tổng mô tả ngoại hình vượt giới hạn — rút ngắn ghi chú thêm.</p>
+                  )}
                 </div>
                 <p className="text-[11px] text-muted-foreground">
-                  App chưa có tham số API riêng cho từng góc nhìn/biểu cảm — hệ thống tự chuyển mô tả ở trên thành chỉ
-                  dẫn trong prompt của mỗi góc chụp (chọn số góc ở mục &quot;Số ảnh&quot; bên dưới), không cam kết khớp
-                  tuyệt đối 100%.
+                  App chưa có tham số API riêng cho từng góc nhìn/biểu cảm — hệ thống tự chuyển các lựa chọn ở trên
+                  thành chỉ dẫn trong prompt của mỗi góc chụp (chọn số góc ở mục &quot;Số ảnh&quot; bên dưới), không
+                  cam kết khớp tuyệt đối 100%.
                 </p>
                 {showNegativePrompt ? (
                   <div className="flex flex-col gap-1.5">
