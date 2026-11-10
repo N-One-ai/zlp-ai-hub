@@ -3,16 +3,17 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { ok, err, type ActionResult } from "@/lib/action-result";
-import { createBannerInputSchema, saveDesignDocumentSchema, exportDesignSchema } from "./schema";
+import { createBannerInputSchema, changeBannerBrandSchema, saveDesignDocumentSchema, exportDesignSchema } from "./schema";
 import { getActiveWorkspace } from "@/lib/workspace/queries";
 import { buildCreativeAssetPath, uploadGeneratedImage, extensionForContentType, resolveSignedAssetUrl } from "@/lib/generation/storage";
 import { downloadBrandAsset } from "@/lib/brand/storage";
 import { readImageDimensions } from "@/lib/generation/image-dimensions";
-import { getTemplates } from "@/lib/brand/queries";
+import { getTemplates, getBrand, getCurrentGuideline } from "@/lib/brand/queries";
 import { getBrandImageAssets } from "./queries";
 import { getDefaultLogoBox } from "./logo-size";
 import { trackEvent } from "@/lib/analytics/track";
 import type { DesignLayer, SafeZone } from "@/types/database";
+import type { GuidelineVersion } from "@/types/brand";
 
 const GENERIC_ERROR = "Đã có lỗi xảy ra. Vui lòng thử lại.";
 let layerSeq = 0;
@@ -212,6 +213,51 @@ export async function createBannerAsset(rawInput: unknown): Promise<ActionResult
   await supabase.from("creative_assets").update({ current_design_document_id: doc.id }).eq("id", asset.id);
 
   return ok({ assetId: asset.id });
+}
+
+/** Lets the editor switch which brand a banner belongs to without leaving
+ * the page. Only ever updates creative_assets' own brand_id/
+ * guideline_version_id columns — never touches the design_documents row
+ * (layers), so a banner's saved logo/text/background placements are
+ * never silently overwritten by this call. EditorShell decides, client-
+ * side, whether to also place a default logo (only when the banner has
+ * no logo layer yet at all — see its handleChangeBrand). */
+export async function changeBannerBrand(
+  rawInput: unknown
+): Promise<ActionResult<{ brandName: string; guideline: GuidelineVersion | null }>> {
+  const parsed = changeBannerBrandSchema.safeParse(rawInput);
+  if (!parsed.success) return err("VALIDATION_ERROR", parsed.error.issues[0]?.message ?? GENERIC_ERROR);
+  const { assetId, brandId } = parsed.data;
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return err("UNAUTHORIZED", "Bạn cần đăng nhập");
+
+  const workspace = await getActiveWorkspace();
+  if (!workspace) return err("FORBIDDEN", "Không tìm thấy workspace.");
+
+  const { data: asset } = await supabase.from("creative_assets").select("workspace_id").eq("id", assetId).maybeSingle();
+  if (!asset || asset.workspace_id !== workspace.workspaceId) return err("FORBIDDEN", "Không tìm thấy banner.");
+
+  const brand = await getBrand(brandId);
+  if (!brand || brand.workspaceId !== workspace.workspaceId || brand.status !== "active") {
+    return err("VALIDATION_ERROR", "Thương hiệu không hợp lệ.");
+  }
+
+  const { error: updateError } = await supabase
+    .from("creative_assets")
+    .update({ brand_id: brandId, guideline_version_id: brand.currentGuidelineVersionId })
+    .eq("id", assetId);
+  if (updateError) {
+    console.error("[changeBannerBrand]", updateError);
+    return err("DB_ERROR", "Không thể đổi thương hiệu cho banner này.");
+  }
+
+  const guideline = await getCurrentGuideline(brandId);
+  revalidatePath(`/create/banner/${assetId}`);
+  return ok({ brandName: brand.name, guideline });
 }
 
 /** Task 4.8 — "tạo bản sao/biến thể": copies the asset's CURRENT design

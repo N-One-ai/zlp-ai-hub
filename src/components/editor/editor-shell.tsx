@@ -7,7 +7,7 @@ import { Loader2, Save, Download, Copy, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { EditorCanvas } from "./canvas";
@@ -19,15 +19,22 @@ import { TextContentPanel } from "./text-content-panel";
 import { LogoPanel } from "./logo-panel";
 import { AiImagePanel } from "./ai-image-panel";
 import { GuidelinePanel } from "./guideline-panel";
+import { BrandPicker } from "@/components/brand/brand-picker";
 import { SizePresetPicker } from "@/components/brand/size-preset-picker";
-import { saveDesignDocument, exportDesign, duplicateBannerAsset, getBrandImageAssetsAction } from "@/lib/design/actions";
+import {
+  saveDesignDocument,
+  exportDesign,
+  duplicateBannerAsset,
+  changeBannerBrand,
+  getBrandImageAssetsAction,
+} from "@/lib/design/actions";
 import { uploadImageAsset } from "@/lib/generation/actions";
 import { checkGuideline, hasBlockingFailure } from "@/lib/design/guideline-check";
 import { scaleLayersToSize } from "@/lib/design/resize";
 import { getDefaultLogoBox } from "@/lib/design/logo-size";
 import { trackEvent } from "@/lib/analytics/track";
 import type { ResolvedLayer } from "@/types/design";
-import type { GuidelineVersion, SizePreset } from "@/types/brand";
+import type { Brand, GuidelineVersion, SizePreset } from "@/types/brand";
 import type { ExportFormat } from "@/types/database";
 import type { ModelMeta } from "@/lib/generation/model-meta";
 
@@ -64,8 +71,9 @@ function buildExportFilename(
 
 export function EditorShell({
   assetId,
-  brandId,
-  brandName,
+  brandId: initialBrandId,
+  brandName: initialBrandName,
+  brands,
   assetName,
   presetName,
   documentId,
@@ -76,12 +84,16 @@ export function EditorShell({
   initialLayers,
   initialSizeVariants,
   presets,
-  guideline,
+  guideline: initialGuideline,
   models,
 }: {
   assetId: string;
   brandId: string;
   brandName: string;
+  /** Every ACTIVE brand in the workspace — lets the user switch which
+   * brand this banner belongs to in-editor (see handleChangeBrand),
+   * without going back to a setup step. */
+  brands: Brand[];
   assetName: string;
   presetName: string | null;
   documentId: string;
@@ -102,6 +114,15 @@ export function EditorShell({
 }) {
   const router = useRouter();
   const stageRef = useRef<Konva.Stage>(null);
+
+  // Brand/guideline start from the server-resolved props but become local
+  // state so handleChangeBrand can swap them in-place after the server
+  // action responds, instead of forcing a full page reload just to show
+  // the new brand's logo/colors.
+  const [brandId, setBrandId] = useState(initialBrandId);
+  const [brandName, setBrandName] = useState(initialBrandName);
+  const [guideline, setGuideline] = useState(initialGuideline);
+  const [isBrandChanging, setIsBrandChanging] = useState(false);
 
   const [currentDocumentId, setCurrentDocumentId] = useState(documentId);
   const [currentVersion, setCurrentVersion] = useState(documentVersion);
@@ -412,6 +433,45 @@ export function EditorShell({
     pushHistory(nextLayers);
   }
 
+  /** Switches which brand this banner belongs to — persists via
+   * changeBannerBrand (updates creative_assets.brand_id/
+   * guideline_version_id only, never the saved layers) then swaps the
+   * local guideline so new text/logo picks use the new brand's
+   * colors/logos immediately. A brand-new banner with no logo layer yet
+   * gets the new brand's default logo placed automatically (PRD: "banner
+   * mới, chọn thương hiệu sẽ cấu hình logo mặc định"); a banner that
+   * already has a logo layer keeps it exactly as-is — switching brand
+   * never silently replaces or deletes an existing logo/text layer (PRD:
+   * "không âm thầm ghi đè... chỉnh sửa thủ công"), the user can still pick
+   * the new brand's logo explicitly from the Logo panel below. */
+  async function handleChangeBrand(newBrandId: string) {
+    if (!newBrandId || newBrandId === brandId || isBrandChanging) return;
+    setIsBrandChanging(true);
+    try {
+      const result = await changeBannerBrand({ assetId, brandId: newBrandId });
+      if (!result.ok) {
+        toast.error(result.error.message);
+        return;
+      }
+      setBrandId(newBrandId);
+      setBrandName(result.data.brandName);
+      setGuideline(result.data.guideline);
+
+      const hasLogoLayer = layers.some((l) => l.type === "logo");
+      const newLogo = result.data.guideline?.logos;
+      if (!hasLogoLayer && newLogo?.primaryPath && newLogo.primaryUrl) {
+        await applyLogoVariant("color", newLogo.primaryPath, newLogo.primaryUrl);
+        toast.success(`Đã đổi sang thương hiệu "${result.data.brandName}" — đã thêm logo mặc định.`);
+      } else {
+        toast.success(
+          `Đã đổi sang thương hiệu "${result.data.brandName}". Logo/nội dung đã có trên banner được giữ nguyên — có thể đổi logo thủ công ở mục "Logo thương hiệu".`
+        );
+      }
+    } finally {
+      setIsBrandChanging(false);
+    }
+  }
+
   async function openBackgroundPicker() {
     setBgPickerOpen(true);
     const assets = await getBrandImageAssetsAction(brandId);
@@ -610,6 +670,13 @@ export function EditorShell({
           </div>
         </div>
 
+        {!backgroundLayer?.imageUrl && (
+          <p className="text-xs text-muted-foreground">
+            Canvas chưa có ảnh nền — bấm biểu tượng ảnh trên thanh công cụ để chọn ảnh có sẵn hoặc tải lên, hoặc dùng
+            &quot;Tạo hình ảnh bằng AI&quot; sau khi có nền.
+          </p>
+        )}
+
         <div className="overflow-auto rounded-lg border bg-muted/30 p-4 flex items-center justify-center">
           <EditorCanvas
             layers={layers}
@@ -628,6 +695,34 @@ export function EditorShell({
       </div>
 
       <div className="flex flex-col gap-4 w-full lg:w-72 shrink-0">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-sm">
+              <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[11px] font-semibold text-primary">
+                1
+              </span>
+              Thiết lập banner
+            </CardTitle>
+            <CardDescription>
+              {brandName}
+              {size.name ? ` · ${size.name} (${size.width} × ${size.height} px)` : ""}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label className="text-xs">Thương hiệu</Label>
+              <BrandPicker brands={brands} value={brandId} onChange={handleChangeBrand} />
+              {isBrandChanging && <p className="text-xs text-muted-foreground">Đang đổi thương hiệu...</p>}
+            </div>
+            {presets.length > 0 && (
+              <div className="flex flex-col gap-1.5">
+                <Label className="text-xs">Kích thước</Label>
+                <SizePresetPicker presets={presets} value={size.id ?? ""} onChange={handleChangeSize} />
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader>
             <CardTitle className="text-sm">Lớp</CardTitle>

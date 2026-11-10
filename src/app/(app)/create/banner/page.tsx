@@ -1,6 +1,8 @@
+import { redirect } from "next/navigation";
 import { requireActiveWorkspace } from "@/lib/workspace/guards";
 import { getBrands, getSizePresets } from "@/lib/brand/queries";
 import { listAvailableModels } from "@/lib/generation/providers";
+import { createBannerAsset } from "@/lib/design/actions";
 import { BannerSetupForm } from "@/components/editor/banner-setup-form";
 
 export default async function CreateBannerSetupPage({
@@ -14,6 +16,28 @@ export default async function CreateBannerSetupPage({
     getBrands(workspace.workspaceId),
     getSizePresets(workspace.workspaceId),
   ]);
+  const activeBrands = brands.filter((b) => b.status === "active");
+
+  // "Tạo banner" (sidebar/dashboard/mobile-nav — every entry point that
+  // doesn't name a specific background asset) always opens a brand-new
+  // draft straight in the editor, no setup step first — see PRD request.
+  // This reuses the EXACT same createBannerAsset() the setup form itself
+  // calls, just with the first active brand/preset as sensible defaults
+  // instead of a user pick, so it's a real persisted draft (status
+  // 'draft'), never a fake/local-only one. The `?asset=` deep links from
+  // Library/job-status (reusing a SPECIFIC existing image as background)
+  // still render the setup form below unchanged — that's a genuinely
+  // different flow (confirm brand/size for a chosen background), not
+  // something this redirect should swallow.
+  if (!backgroundAssetId && activeBrands[0] && presets[0]) {
+    const created = await createBannerAsset({
+      brandId: activeBrands[0].id,
+      sizePresetId: presets[0].id,
+      backgroundAssetId: null,
+      templateId: null,
+    });
+    if (created.ok) redirect(`/create/banner/${created.data.assetId}`);
+  }
 
   const models = listAvailableModels().map((m) => ({
     id: m.id,

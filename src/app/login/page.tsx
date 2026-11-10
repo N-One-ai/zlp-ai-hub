@@ -16,7 +16,7 @@ export default async function LoginPage({
       footer={
         <p className="text-center text-sm text-muted-foreground">
           Chưa có tài khoản?{" "}
-          <Link href="/register" className="font-medium text-[#5b85ff] hover:underline">
+          <Link href="/register" className="font-medium text-primary hover:underline">
             Đăng ký
           </Link>
         </p>

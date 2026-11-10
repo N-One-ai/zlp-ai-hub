@@ -24,7 +24,7 @@ export function BrandReadinessBanner({
 }) {
   if (readiness.isReady) {
     return (
-      <div className="flex items-center gap-2 rounded-lg border border-emerald-600/30 bg-emerald-600/5 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-400">
+      <div className="flex items-center gap-2 rounded-lg border border-success/30 bg-success/10 px-3 py-2 text-sm text-success">
         <CheckCircle2 className="size-4 shrink-0" />
         Thương hiệu đã sẵn sàng để tạo ảnh/banner.
       </div>
@@ -34,7 +34,7 @@ export function BrandReadinessBanner({
   const missing = CHECKS.filter((c) => !readiness[c.key]);
 
   return (
-    <div className="flex items-start gap-2 rounded-lg border border-amber-600/30 bg-amber-600/5 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
+    <div className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning">
       <AlertTriangle className="size-4 shrink-0 mt-0.5" />
       <span className="flex flex-wrap items-center gap-x-1">
         <span>Chưa đủ cấu hình để sử dụng:</span>

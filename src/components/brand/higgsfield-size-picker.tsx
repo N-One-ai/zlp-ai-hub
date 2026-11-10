@@ -51,15 +51,15 @@ export function HiggsfieldSizePicker({
             aria-pressed={selected}
             onClick={() => onChange(option.value)}
             className={cn(
-              "flex min-h-[64px] flex-col items-center justify-center gap-1.5 rounded-lg border px-2 py-2.5 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "flex min-h-[64px] flex-col items-center justify-center gap-1.5 rounded-lg px-2 py-2.5 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               selected
-                ? "border-primary bg-primary/10 text-primary"
-                : "border-input text-muted-foreground hover:border-foreground/30 hover:text-foreground"
+                ? "bg-primary text-primary-foreground"
+                : "bg-muted text-muted-foreground hover:bg-muted/70 hover:text-foreground"
             )}
           >
             <RatioIcon option={option} selected={selected} />
             <span className="text-xs font-medium leading-none">{option.ratioLabel ?? "Khác"}</span>
-            <span className="text-[10px] leading-none text-muted-foreground tabular-nums">
+            <span className={cn("text-[10px] leading-none tabular-nums", selected ? "text-primary-foreground/80" : "text-muted-foreground")}>
               {option.width}×{option.height}
             </span>
           </button>

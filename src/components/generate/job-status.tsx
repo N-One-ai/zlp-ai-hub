@@ -95,7 +95,7 @@ export function JobStatus({ initialJob }: { initialJob: GenerationJob }) {
       <CardContent className="flex flex-col gap-4">
         <div className="flex items-center gap-2">
           {ACTIVE_STATUSES.has(job.status) && <Loader2 className="size-4 animate-spin text-muted-foreground" />}
-          {job.status === "succeeded" && <CheckCircle2 className="size-4 text-emerald-600" />}
+          {job.status === "succeeded" && <CheckCircle2 className="size-4 text-success" />}
           {job.status === "failed" && <XCircle className="size-4 text-destructive" />}
           <Badge variant="secondary">{STATUS_LABEL[job.status]}</Badge>
           <span className="text-xs text-muted-foreground">
@@ -121,7 +121,7 @@ export function JobStatus({ initialJob }: { initialJob: GenerationJob }) {
                 </div>
                 <div className="flex items-center justify-between gap-2">
                   {result.isDemo && (
-                    <Badge variant="outline" className="text-amber-700 border-amber-600/40">
+                    <Badge variant="outline" className="text-warning border-warning/40">
                       Demo
                     </Badge>
                   )}

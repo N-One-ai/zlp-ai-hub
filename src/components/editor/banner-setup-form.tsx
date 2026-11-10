@@ -311,10 +311,8 @@ export function BannerSetupForm({
                       aria-pressed={selected}
                       aria-label={img.name || "Ảnh nền chưa đặt tên"}
                       className={cn(
-                        "relative aspect-square w-full overflow-hidden rounded-lg bg-muted/40 outline-none ring-2 transition-all",
-                        selected
-                          ? "ring-primary"
-                          : "ring-transparent hover:ring-border focus-visible:ring-primary"
+                        "relative aspect-square w-full overflow-hidden rounded-lg bg-muted/40 outline-none transition-all focus-visible:ring-2 focus-visible:ring-ring",
+                        !selected && "opacity-80 hover:opacity-100"
                       )}
                     >
                       {img.url && (

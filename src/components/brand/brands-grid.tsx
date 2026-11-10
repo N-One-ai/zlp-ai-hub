@@ -116,8 +116,8 @@ function BrandCard({
                   variant="outline"
                   className={
                     readiness.isReady
-                      ? "border-emerald-600/30 text-emerald-700 dark:text-emerald-400"
-                      : "border-amber-600/40 text-amber-700 dark:text-amber-400"
+                      ? "border-success/30 text-success"
+                      : "border-warning/40 text-warning"
                   }
                 >
                   {readiness.isReady ? "Đã cấu hình" : "Chưa hoàn thiện"}

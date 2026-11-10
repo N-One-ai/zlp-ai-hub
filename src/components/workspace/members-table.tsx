@@ -40,8 +40,8 @@ const STATUS_LABEL: Record<MembershipStatus, string> = {
 };
 
 const STATUS_BADGE_CLASS: Record<MembershipStatus, string> = {
-  active: "border-emerald-600/30 text-emerald-700 dark:text-emerald-400",
-  invited: "border-amber-600/40 text-amber-700 dark:text-amber-400",
+  active: "border-success/30 text-success",
+  invited: "border-warning/40 text-warning",
   revoked: "border-border text-muted-foreground",
 };
 

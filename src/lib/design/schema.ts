@@ -8,6 +8,12 @@ export const createBannerInputSchema = z.object({
 });
 export type CreateBannerInput = z.infer<typeof createBannerInputSchema>;
 
+export const changeBannerBrandSchema = z.object({
+  assetId: z.string().uuid(),
+  brandId: z.string().uuid(),
+});
+export type ChangeBannerBrandInput = z.infer<typeof changeBannerBrandSchema>;
+
 const layerSchema = z.object({
   id: z.string().min(1),
   type: z.enum(["background", "image", "text", "logo", "shape"]),

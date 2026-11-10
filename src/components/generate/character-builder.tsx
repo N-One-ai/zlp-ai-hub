@@ -215,10 +215,10 @@ function AppearanceChipGroup({
             onClick={() => onChange(o.id)}
             aria-pressed={selected}
             className={cn(
-              "inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               selected
-                ? "border-primary bg-primary/10 text-primary"
-                : "border-transparent bg-muted/60 text-muted-foreground hover:bg-muted"
+                ? "bg-primary text-primary-foreground"
+                : "bg-muted/60 text-muted-foreground hover:bg-muted"
             )}
           >
             {selected && <Check className="size-3.5" />}
@@ -853,8 +853,8 @@ export function CharacterBuilder({
                 type="button"
                 onClick={startNewCharacter}
                 className={cn(
-                  "flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
-                  isNew ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:bg-muted"
+                  "flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
+                  isNew ? "bg-primary text-primary-foreground" : "bg-muted/60 text-muted-foreground hover:bg-muted"
                 )}
               >
                 <Plus className="size-3" />
@@ -866,10 +866,10 @@ export function CharacterBuilder({
                   type="button"
                   onClick={() => selectCharacter(c.id)}
                   className={cn(
-                    "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
+                    "flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
                     selectedId === c.id
-                      ? "border-primary bg-primary/10 text-primary"
-                      : "border-border text-muted-foreground hover:bg-muted"
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted/60 text-muted-foreground hover:bg-muted"
                   )}
                 >
                   <span className="flex size-4 items-center justify-center overflow-hidden rounded-full bg-muted">
@@ -942,10 +942,10 @@ export function CharacterBuilder({
                     <div className="flex flex-col gap-1.5">
                       <Label className="text-xs text-muted-foreground">Giới tính</Label>
                       <div className="grid grid-cols-2 gap-1.5">
-                        <Button type="button" size="sm" variant={gender === "male" ? "default" : "outline"} onClick={() => setGender("male")}>
+                        <Button type="button" size="sm" variant={gender === "male" ? "default" : "ghost"} onClick={() => setGender("male")}>
                           Nam
                         </Button>
-                        <Button type="button" size="sm" variant={gender === "female" ? "default" : "outline"} onClick={() => setGender("female")}>
+                        <Button type="button" size="sm" variant={gender === "female" ? "default" : "ghost"} onClick={() => setGender("female")}>
                           Nữ
                         </Button>
                       </div>
@@ -994,15 +994,15 @@ export function CharacterBuilder({
                   <CollapsiblePanel className="flex flex-col gap-3">
                     <div className="flex flex-col gap-2">
                       <FieldLabel>Nguồn khuôn mặt</FieldLabel>
-                      <div className="grid grid-cols-2 gap-1.5 rounded-2xl border border-border p-1.5">
-                        <Button type="button" size="sm" variant={faceSource === "upload" ? "default" : "outline"} onClick={() => setFaceSource("upload")}>
+                      <div className="grid grid-cols-2 gap-1.5 rounded-2xl bg-muted/40 p-1.5">
+                        <Button type="button" size="sm" variant={faceSource === "upload" ? "default" : "ghost"} onClick={() => setFaceSource("upload")}>
                           <Upload className="size-3.5" />
                           Tải ảnh mặt
                         </Button>
                         <Button
                           type="button"
                           size="sm"
-                          variant={faceSource === "ai" ? "default" : "outline"}
+                          variant={faceSource === "ai" ? "default" : "ghost"}
                           disabled={models.length === 0}
                           title={models.length === 0 ? "Chưa có model AI nào được cấu hình để tạo khuôn mặt." : undefined}
                           onClick={() => setFaceSource("ai")}
@@ -1223,8 +1223,8 @@ export function CharacterBuilder({
                           onClick={() => setStyle(p.id)}
                           aria-pressed={selected}
                           className={cn(
-                            "relative flex flex-col items-start gap-1.5 rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                            selected ? "border-primary bg-primary/5 ring-1 ring-primary" : "border-border hover:bg-muted/40"
+                            "relative flex flex-col items-start gap-1.5 rounded-xl p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                            selected ? "bg-primary/10" : "bg-muted/40 hover:bg-muted/60"
                           )}
                         >
                           {selected && (
@@ -1335,16 +1335,16 @@ export function CharacterBuilder({
               <CollapsiblePanel className="flex flex-col gap-3">
                 <div className="flex flex-col gap-2">
                   <FieldLabel>Chế độ trang phục</FieldLabel>
-                  <div className="grid grid-cols-3 gap-1.5 rounded-2xl border border-border p-1.5">
-                    <Button type="button" size="sm" variant={outfitMode === "preset" ? "default" : "outline"} onClick={() => setOutfitMode("preset")}>
+                  <div className="grid grid-cols-3 gap-1.5 rounded-2xl bg-muted/40 p-1.5">
+                    <Button type="button" size="sm" variant={outfitMode === "preset" ? "default" : "ghost"} onClick={() => setOutfitMode("preset")}>
                       <Sparkle className="size-3.5" />
                       Gợi ý sẵn
                     </Button>
-                    <Button type="button" size="sm" variant={outfitMode === "custom" ? "default" : "outline"} onClick={() => setOutfitMode("custom")}>
+                    <Button type="button" size="sm" variant={outfitMode === "custom" ? "default" : "ghost"} onClick={() => setOutfitMode("custom")}>
                       <SquarePen className="size-3.5" />
                       Tự nhập
                     </Button>
-                    <Button type="button" size="sm" variant={outfitMode === "upload" ? "default" : "outline"} onClick={() => setOutfitMode("upload")}>
+                    <Button type="button" size="sm" variant={outfitMode === "upload" ? "default" : "ghost"} onClick={() => setOutfitMode("upload")}>
                       <Upload className="size-3.5" />
                       Tải ảnh
                     </Button>
@@ -1364,10 +1364,10 @@ export function CharacterBuilder({
                             onClick={() => setOutfitPresetId(p.id)}
                             aria-pressed={selected}
                             className={cn(
-                              "flex items-center gap-2 rounded-full border px-4 py-2.5 text-left text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                              "flex items-center gap-2 rounded-full px-4 py-2.5 text-left text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                               selected
-                                ? "border-primary bg-primary/10 text-primary"
-                                : "border-transparent bg-muted/60 text-muted-foreground hover:bg-muted"
+                                ? "bg-primary text-primary-foreground"
+                                : "bg-muted/60 text-muted-foreground hover:bg-muted"
                             )}
                           >
                             {selected && <Check className="size-3.5 shrink-0" />}
@@ -1436,13 +1436,13 @@ export function CharacterBuilder({
                     )}
                     {outfitUploadedImage &&
                       (isMarketingStudioSelected ? (
-                        <p className="flex items-start gap-1 text-[11px] text-emerald-600 dark:text-emerald-500">
+                        <p className="flex items-start gap-1 text-[11px] text-success">
                           <CheckCircle2 className="mt-0.5 size-3 shrink-0" />
                           Ảnh này sẽ được gửi làm ảnh tham chiếu trang phục (chỉ lấy kiểu dáng/màu sắc/họa tiết — khuôn
                           mặt và danh tính luôn theo ảnh khuôn mặt).
                         </p>
                       ) : (
-                        <p className="flex items-start gap-1 text-[11px] text-amber-600 dark:text-amber-500">
+                        <p className="flex items-start gap-1 text-[11px] text-warning">
                           <AlertTriangle className="mt-0.5 size-3 shrink-0" />
                           Model đang chọn chỉ nhận 1 ảnh tham chiếu (khuôn mặt) — ảnh này sẽ không được gửi. Chọn
                           Higgsfield Marketing Studio ở mục Model để dùng ảnh này làm tham chiếu trang phục.
@@ -1486,10 +1486,10 @@ export function CharacterBuilder({
                               onClick={() => setResolution(r)}
                               aria-pressed={selected}
                               className={cn(
-                                "inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                                "inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                                 selected
-                                  ? "border-primary bg-primary/10 text-primary"
-                                  : "border-transparent bg-muted/60 text-muted-foreground hover:bg-muted"
+                                  ? "bg-primary text-primary-foreground"
+                                  : "bg-muted/60 text-muted-foreground hover:bg-muted"
                               )}
                             >
                               {r.toUpperCase()}
@@ -1504,7 +1504,7 @@ export function CharacterBuilder({
                       </p>
                     </>
                   ) : (
-                    <p className="flex items-start gap-1 text-xs text-amber-600 dark:text-amber-500">
+                    <p className="flex items-start gap-1 text-xs text-warning">
                       <AlertTriangle className="mt-0.5 size-3 shrink-0" />
                       Model đang chọn không có tham số aspect_ratio/resolution riêng — app sẽ yêu cầu kích thước
                       pixel 1920×1080 (16:9) thay thế. Chọn Higgsfield Marketing Studio để gửi đúng tham số thật của
@@ -1520,7 +1520,7 @@ export function CharacterBuilder({
                 <Label className="text-xs text-muted-foreground">Mô hình AI (chỉ các model đã cấu hình thật)</Label>
                 <ModelPicker models={models} value={model} onChange={setModel} />
                 {!modelSupportsFaceReference && (
-                  <p className="flex items-start gap-1 text-xs text-amber-600 dark:text-amber-500">
+                  <p className="flex items-start gap-1 text-xs text-warning">
                     <AlertTriangle className="mt-0.5 size-3 shrink-0" />
                     Model này chưa hỗ trợ ảnh tham chiếu khuôn mặt trong app — kết quả có thể không khớp khuôn mặt đã
                     khóa (xem ghi chú sau khi tạo).
@@ -1642,16 +1642,21 @@ export function CharacterBuilder({
                         type="button"
                         onClick={() => setActiveSheet(sheet)}
                         className={cn(
-                          "flex w-full flex-col gap-1 rounded-lg border p-1.5 text-left transition-colors",
-                          activeSheet?.sheetId === sheet.sheetId ? "border-primary ring-1 ring-primary" : "border-border hover:bg-muted/50"
+                          "flex w-full flex-col gap-1 rounded-lg p-1.5 text-left transition-colors",
+                          activeSheet?.sheetId === sheet.sheetId ? "bg-primary/10" : "hover:bg-muted/50"
                         )}
                       >
-                        <span className="flex aspect-square items-center justify-center overflow-hidden rounded bg-muted">
+                        <span className="relative flex aspect-square items-center justify-center overflow-hidden rounded bg-muted">
                           {cover?.url ? (
                             // eslint-disable-next-line @next/next/no-img-element -- short-lived signed URL
                             <img src={cover.url} alt={`Bảng nhân vật #${sheets.length - i}`} className="max-h-full max-w-full object-contain" />
                           ) : (
                             <ImageIconLucide className="size-4 text-muted-foreground" />
+                          )}
+                          {activeSheet?.sheetId === sheet.sheetId && (
+                            <span className="absolute top-1 right-1 flex size-4 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                              <Check className="size-2.5" />
+                            </span>
                           )}
                         </span>
                         <span className="flex items-center justify-between text-[11px] text-muted-foreground">

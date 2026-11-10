@@ -3,8 +3,8 @@ import type { GuidelineCheckResult } from "@/types/design";
 
 const SEVERITY_ICON = { pass: CheckCircle2, review: AlertTriangle, fail: XCircle } as const;
 const SEVERITY_CLASS = {
-  pass: "text-emerald-600",
-  review: "text-amber-600",
+  pass: "text-success",
+  review: "text-warning",
   fail: "text-destructive",
 } as const;
 const SEVERITY_LABEL = { pass: "Đạt", review: "Cần xem lại", fail: "Không đạt" } as const;

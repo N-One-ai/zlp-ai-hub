@@ -106,7 +106,7 @@ export function UnassignedUsersTable({
   if (!canCheck) {
     return (
       <div className="flex flex-col items-center gap-2 py-8 text-center">
-        <AlertTriangle className="size-8 text-amber-500/70" />
+        <AlertTriangle className="size-8 text-warning/70" />
         <p className="max-w-md text-sm text-muted-foreground">
           Chưa thể kiểm tra người dùng mới đăng ký — tính năng này cần áp dụng migration cơ sở dữ liệu
           (<code className="text-xs">0009_members_directory.sql</code>) trước.

@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { requireActiveWorkspace } from "@/lib/workspace/guards";
 import { getBannerAsset, getCurrentDesignDocument } from "@/lib/design/queries";
-import { getCurrentGuideline, getBrand, getSizePreset, getSizePresets } from "@/lib/brand/queries";
+import { getCurrentGuideline, getBrand, getBrands, getSizePreset, getSizePresets } from "@/lib/brand/queries";
 import { listAvailableModels } from "@/lib/generation/providers";
 import { EditorShell } from "@/components/editor/editor-shell";
 
@@ -13,11 +13,12 @@ export default async function BannerEditorPage({ params }: { params: Promise<{ a
   const asset = await getBannerAsset(assetId);
   if (!asset || asset.workspaceId !== workspace.workspaceId) notFound();
 
-  const [document, guideline, brand, presets] = await Promise.all([
+  const [document, guideline, brand, presets, brands] = await Promise.all([
     getCurrentDesignDocument(assetId),
     getCurrentGuideline(asset.brandId),
     getBrand(asset.brandId),
     getSizePresets(workspace.workspaceId),
+    getBrands(workspace.workspaceId),
   ]);
   if (!document) notFound();
 
@@ -43,6 +44,7 @@ export default async function BannerEditorPage({ params }: { params: Promise<{ a
         assetId={asset.id}
         brandId={asset.brandId}
         brandName={brand?.name ?? "thuong-hieu"}
+        brands={brands.filter((b) => b.status === "active")}
         assetName={asset.name}
         presetName={preset?.name ?? null}
         documentId={document.id}

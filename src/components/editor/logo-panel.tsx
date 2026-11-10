@@ -1,5 +1,6 @@
 "use client";
 
+import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { GuidelineLogos } from "@/types/brand";
 
@@ -43,14 +44,14 @@ export function LogoPanel({
             disabled={!available}
             onClick={() => available && v.path && v.url && onSelect(v.key, v.path, v.url)}
             className={cn(
-              "flex flex-col items-center gap-1.5 rounded-lg border p-2 text-center transition-colors",
+              "flex flex-col items-center gap-1.5 rounded-lg p-2 text-center transition-colors",
               !available && "cursor-not-allowed opacity-60",
-              active ? "border-primary bg-primary/10" : "border-input hover:border-foreground/30"
+              active ? "bg-primary/10" : "bg-muted/30 hover:bg-muted/50"
             )}
           >
             <span
               className={cn(
-                "flex h-12 w-full items-center justify-center rounded-md",
+                "relative flex h-12 w-full items-center justify-center rounded-md",
                 v.key === "white" ? "bg-neutral-800" : "bg-muted/40"
               )}
             >
@@ -59,6 +60,11 @@ export function LogoPanel({
                 <img src={v.url!} alt={v.label} className="max-h-10 max-w-[90%] object-contain" />
               ) : (
                 <span className="text-[10px] text-muted-foreground">Chưa có</span>
+              )}
+              {active && (
+                <span className="absolute top-1 right-1 flex size-4 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                  <Check className="size-2.5" />
+                </span>
               )}
             </span>
             <span className="text-xs font-medium">{v.label}</span>

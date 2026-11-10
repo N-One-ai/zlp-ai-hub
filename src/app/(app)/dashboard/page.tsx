@@ -34,7 +34,7 @@ export default async function DashboardPage() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr] items-stretch">
-        <div className="relative flex items-center overflow-hidden rounded-xl ring-1 ring-border bg-gradient-to-br from-[#0033C9]/16 via-card to-[#00CF6A]/10 min-h-56 lg:min-h-0">
+        <div className="relative flex items-center overflow-hidden rounded-xl ring-1 ring-border bg-gradient-to-br from-primary/14 via-card to-primary/6 min-h-56 lg:min-h-0">
           <div className="relative z-10 flex flex-col gap-3 p-6 sm:p-8 max-w-[85%] sm:max-w-[60%]">
             <span className="inline-flex w-fit items-center rounded-md bg-gradient-to-r from-primary to-accent px-2 py-0.5 text-[11px] font-bold text-primary-foreground">
               Creative Hub
@@ -55,17 +55,17 @@ export default async function DashboardPage() {
         <div className="flex flex-col gap-4">
           <Link
             href="/create/image"
-            className="@container group relative flex flex-1 flex-col @sm:flex-row overflow-hidden rounded-feature bg-gradient-to-br from-[#0033C9]/20 via-[#0033C9]/8 to-transparent ring-1 ring-[#0033C9]/25 hover:ring-[#0033C9]/45 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5b85ff] focus-visible:ring-offset-2 focus-visible:ring-offset-background transition-all"
+            className="@container group relative flex flex-1 flex-col @sm:flex-row overflow-hidden rounded-feature bg-gradient-to-br from-primary/20 via-primary/8 to-transparent ring-1 ring-primary/25 hover:ring-primary/45 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background transition-all"
           >
             <div className="relative z-10 flex flex-col gap-3 p-5 @sm:py-5 @sm:pr-2 @sm:max-w-[58%]">
-              <div className="flex size-10 items-center justify-center rounded-icon bg-[#0033C9] text-white shadow-sm shadow-[#0033C9]/30">
+              <div className="flex size-10 items-center justify-center rounded-icon bg-primary text-primary-foreground shadow-sm shadow-primary/30">
                 <ImageIcon className="size-4.5" />
               </div>
               <div>
                 <h3 className="font-heading text-base font-semibold">Tạo ảnh</h3>
                 <p className="text-sm text-muted-foreground mt-0.5">Sinh ảnh bằng AI theo đúng thương hiệu đã chọn.</p>
               </div>
-              <span className="flex items-center gap-1 text-sm font-medium text-[#5b85ff] mt-auto">
+              <span className="flex items-center gap-1 text-sm font-medium text-primary mt-auto">
                 Bắt đầu
                 <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
               </span>
@@ -77,17 +77,17 @@ export default async function DashboardPage() {
 
           <Link
             href="/create/banner"
-            className="@container group relative flex flex-1 flex-col @sm:flex-row overflow-hidden rounded-feature bg-gradient-to-br from-[#00CF6A]/20 via-[#00CF6A]/8 to-transparent ring-1 ring-[#00CF6A]/25 hover:ring-[#00CF6A]/45 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00CF6A] focus-visible:ring-offset-2 focus-visible:ring-offset-background transition-all"
+            className="@container group relative flex flex-1 flex-col @sm:flex-row overflow-hidden rounded-feature bg-gradient-to-br from-primary/20 via-primary/8 to-transparent ring-1 ring-primary/25 hover:ring-primary/45 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background transition-all"
           >
             <div className="relative z-10 flex flex-col gap-3 p-5 @sm:py-5 @sm:pr-2 @sm:max-w-[58%]">
-              <div className="flex size-10 items-center justify-center rounded-icon bg-[#00CF6A] text-white shadow-sm shadow-[#00CF6A]/30">
+              <div className="flex size-10 items-center justify-center rounded-icon bg-primary text-primary-foreground shadow-sm shadow-primary/30">
                 <LayoutTemplate className="size-4.5" />
               </div>
               <div>
                 <h3 className="font-heading text-base font-semibold">Tạo banner</h3>
                 <p className="text-sm text-muted-foreground mt-0.5">Dàn trang banner theo kích thước và guideline.</p>
               </div>
-              <span className="flex items-center gap-1 text-sm font-medium text-[#00CF6A] mt-auto">
+              <span className="flex items-center gap-1 text-sm font-medium text-primary mt-auto">
                 Bắt đầu
                 <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
               </span>
@@ -116,7 +116,7 @@ export default async function DashboardPage() {
                   href={`/create/image?job=${job.id}`}
                   className="flex items-center gap-2 py-2 text-sm hover:text-foreground"
                 >
-                  <Loader2 className="size-3.5 animate-spin text-[#5b85ff] shrink-0" />
+                  <Loader2 className="size-3.5 animate-spin text-primary shrink-0" />
                   <span className="flex-1 truncate text-muted-foreground">{job.prompt}</span>
                 </Link>
               ))}
@@ -129,7 +129,7 @@ export default async function DashboardPage() {
         <div className="flex items-center justify-between">
           <h2 className="font-heading text-base font-semibold">Tài sản gần đây</h2>
           {recentAssets.length > 0 && (
-            <Link href="/library" className="text-sm font-medium text-[#5b85ff] hover:underline">
+            <Link href="/library" className="text-sm font-medium text-primary hover:underline">
               Xem tất cả →
             </Link>
           )}

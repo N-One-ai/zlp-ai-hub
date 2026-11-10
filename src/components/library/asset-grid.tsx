@@ -148,7 +148,7 @@ function GridCard({
   return (
     <Link
       href={`/library/${asset.id}`}
-      className="group flex flex-col rounded-xl ring-1 ring-border overflow-hidden bg-card outline-none transition-all hover:ring-primary/40 focus-visible:ring-2 focus-visible:ring-primary"
+      className="group flex flex-col rounded-xl overflow-hidden bg-card outline-none transition-all hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-ring"
     >
       <div className="relative">
         <AssetThumb asset={asset} className="aspect-square w-full" />
@@ -185,7 +185,7 @@ function ListRow({
   return (
     <Link
       href={`/library/${asset.id}`}
-      className="group flex items-center gap-3 rounded-xl ring-1 ring-border bg-card px-3 py-2.5 outline-none transition-all hover:ring-primary/40 focus-visible:ring-2 focus-visible:ring-primary"
+      className="group flex items-center gap-3 rounded-xl bg-card px-3 py-2.5 outline-none transition-all hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring"
     >
       <AssetThumb asset={asset} className="size-12 shrink-0 rounded-lg" />
       <div className="min-w-0 flex-1">

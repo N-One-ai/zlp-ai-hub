@@ -54,10 +54,11 @@
   --color-warning: var(--warning);
   --color-warning-foreground: var(--warning-foreground);
   /* Single source of truth for the site-wide CTA button gradient's end
-   * color (brand blue --primary -> this green, left to right). Every
-   * primary action button reads this token — see buttonVariants'
-   * `default` variant in components/ui/button.tsx — instead of each
-   * call site repeating the raw hex. */
+   * color — equal to --primary in both themes (both are #01EC57), so the
+   * gradient renders as a flat accent fill today. Every primary action
+   * button reads this token — see buttonVariants' `default` variant in
+   * components/ui/button.tsx — instead of each call site repeating the
+   * raw hex. */
   --color-cta-to: var(--cta-to);
   /* Pill-shaped light CTA gradient (mint/ivory -> near-white -> bright
    * sky blue) — no longer used by any button (superseded by the
@@ -86,6 +87,10 @@
    * cards) — rounder than the 12px control radius since they're bigger,
    * content-rich cards, not compact chrome. See --radius-feature below. */
   --radius-feature: var(--radius-feature-size);
+  /* --radius bumped 8 -> 10 (see both theme blocks below) so every card/
+   * panel on the --radius-xl+ scale reads as the large, clearly-rounded
+   * surface in the reference design, without touching individual
+   * rounded-* class names anywhere in the app. */
   --radius-xl: calc(var(--radius) * 1.4);
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
@@ -103,8 +108,15 @@
   --card-foreground: oklch(0.2 0.025 290);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.2 0.025 290);
-  --primary: oklch(0.423 0.232 263.7); /* #0033C9 */
-  --primary-foreground: oklch(0.98 0.01 264);
+  /* Shared design-system accent — #01EC57 — used for every primary CTA,
+   * active/selected state and focus emphasis across the app (see the
+   * .dark block below, the theme actually shown by default). Kept equal
+   * in both themes so the token means the same thing regardless of
+   * theme; --primary-foreground is a near-black, green-tinted ink (not
+   * plain white) because text sits directly on this bright green fill
+   * and needs real contrast, not the brand-blue's near-white ink. */
+  --primary: #01ec57;
+  --primary-foreground: oklch(0.16 0.03 152);
   --secondary: oklch(0.95 0.012 290);
   --secondary-foreground: oklch(0.26 0.03 290);
   --muted: oklch(0.96 0.01 290);
@@ -131,13 +143,13 @@
   --pill-foreground: #0f2030;
   --border: oklch(0.9 0.012 290);
   --input: oklch(0.9 0.012 290);
-  --ring: oklch(0.423 0.232 263.7 / 50%);
+  --ring: color-mix(in oklch, var(--primary) 55%, transparent);
   --chart-1: oklch(0.423 0.232 263.7);
   --chart-2: oklch(0.72 0.14 195);
   --chart-3: oklch(0.75 0.16 85);
   --chart-4: oklch(0.65 0.2 350);
   --chart-5: oklch(0.65 0.16 165);
-  /* Single radius scale for the whole app. --radius-xl (11.2px) and up are
+  /* Single radius scale for the whole app. --radius-xl (14px) and up are
      the standard for large STATIC cards/panels (Card, hero cards, auth
      card, empty states), derived from --radius below — change --radius,
      not individual rounded-* classes, to retune those. The three values
@@ -149,38 +161,43 @@
        --radius-icon-size (10px) - the small square background chip behind
          a single icon (stat cards, empty states, settings rows, sidebar
          nav icon badge, CTA tile icon badge, alert-dialog icon).
-       --radius-feature-size (16px) - large clickable feature tiles, e.g.
+       --radius-feature-size (20px) - large clickable feature tiles, e.g.
          the Dashboard "Tạo ảnh"/"Tạo banner" cards. */
-  --radius: 8px;
+  --radius: 10px;
   --radius-control: 12px;
   --radius-icon-size: 10px;
-  --radius-feature-size: 16px;
+  --radius-feature-size: 20px;
   --sidebar: oklch(0.16 0.025 290);
   --sidebar-foreground: oklch(0.85 0.012 290);
-  --sidebar-primary: oklch(0.423 0.232 263.7);
-  --sidebar-primary-foreground: oklch(0.98 0.01 264);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
   --sidebar-accent: oklch(0.22 0.03 290);
   --sidebar-accent-foreground: oklch(0.96 0.01 290);
   --sidebar-border: oklch(1 0 0 / 8%);
-  --sidebar-ring: oklch(0.55 0.22 263.7 / 50%);
+  --sidebar-ring: color-mix(in oklch, var(--primary) 50%, transparent);
 }
 
-/* Primary theme — dark, Zalopay brand blue (#0033C9) as primary, with a
-   cyan accent. Card surfaces sit one clear step lighter than the page
-   background so grouping reads at a glance without heavy borders. */
+/* Primary theme — the one actually shown by default (see ThemeProvider in
+   layout.tsx) — near-black page background with a layered charcoal
+   surface scale (sidebar darkest -> background -> card -> popover, each
+   a clear step brighter) and the shared #01EC57 green as the one accent
+   used for every active state, focus ring and primary CTA. Zalopay's
+   brand blue stays on brand marks only (logo badge, hero art — literal
+   hex, deliberately not tokenized here, see app-shell.tsx/dashboard
+   hero art), never on generic interactive chrome. */
 .dark {
-  --background: oklch(0.15 0.022 290);
-  --foreground: oklch(0.96 0.008 290);
-  --card: oklch(0.205 0.028 290);
-  --card-foreground: oklch(0.96 0.008 290);
-  --popover: oklch(0.22 0.03 290);
-  --popover-foreground: oklch(0.96 0.008 290);
-  --primary: oklch(0.423 0.232 263.7); /* #0033C9 */
-  --primary-foreground: oklch(0.98 0.01 264);
-  --secondary: oklch(0.27 0.032 290);
-  --secondary-foreground: oklch(0.94 0.008 290);
-  --muted: oklch(0.24 0.028 290);
-  --muted-foreground: oklch(0.68 0.018 290);
+  --background: oklch(0.1 0.01 290);
+  --foreground: oklch(0.97 0.006 290);
+  --card: oklch(0.165 0.016 290);
+  --card-foreground: oklch(0.97 0.006 290);
+  --popover: oklch(0.195 0.02 290);
+  --popover-foreground: oklch(0.97 0.006 290);
+  --primary: #01ec57;
+  --primary-foreground: oklch(0.16 0.03 152);
+  --secondary: oklch(0.22 0.02 290);
+  --secondary-foreground: oklch(0.95 0.006 290);
+  --muted: oklch(0.19 0.018 290);
+  --muted-foreground: oklch(0.66 0.016 290);
   --accent: oklch(0.8 0.13 195);
   --accent-foreground: oklch(0.15 0.03 195);
   --success: oklch(0.78 0.14 165);
@@ -190,22 +207,22 @@
   --destructive: oklch(0.7 0.19 25);
   --destructive-foreground: oklch(0.15 0.03 25);
   --cta-to: #01ec57;
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 14%);
-  --ring: oklch(0.55 0.22 263.7 / 55%);
-  --chart-1: oklch(0.423 0.232 263.7);
+  --border: oklch(1 0 0 / 9%);
+  --input: oklch(1 0 0 / 13%);
+  --ring: color-mix(in oklch, var(--primary) 55%, transparent);
+  --chart-1: #01ec57;
   --chart-2: oklch(0.8 0.13 195);
   --chart-3: oklch(0.8 0.15 85);
   --chart-4: oklch(0.72 0.18 350);
   --chart-5: oklch(0.78 0.14 165);
-  --sidebar: oklch(0.115 0.02 290);
-  --sidebar-foreground: oklch(0.8 0.015 290);
-  --sidebar-primary: oklch(0.423 0.232 263.7);
-  --sidebar-primary-foreground: oklch(0.98 0.01 264);
-  --sidebar-accent: oklch(0.2 0.028 290);
-  --sidebar-accent-foreground: oklch(0.95 0.008 290);
-  --sidebar-border: oklch(1 0 0 / 8%);
-  --sidebar-ring: oklch(0.55 0.22 263.7 / 50%);
+  --sidebar: oklch(0.07 0.008 290);
+  --sidebar-foreground: oklch(0.82 0.012 290);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: oklch(0.15 0.016 290);
+  --sidebar-accent-foreground: oklch(0.96 0.006 290);
+  --sidebar-border: oklch(1 0 0 / 7%);
+  --sidebar-ring: color-mix(in oklch, var(--primary) 50%, transparent);
 }
 
 @layer base {

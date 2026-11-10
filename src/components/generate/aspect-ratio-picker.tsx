@@ -60,10 +60,10 @@ export function AspectRatioPicker({
             aria-pressed={selected}
             onClick={() => onChange(ratio)}
             className={cn(
-              "flex min-h-[56px] flex-col items-center justify-center gap-1.5 rounded-lg border px-2 py-2.5 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "flex min-h-[56px] flex-col items-center justify-center gap-1.5 rounded-lg px-2 py-2.5 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               selected
-                ? "border-primary bg-primary/10 text-primary"
-                : "border-input text-muted-foreground hover:border-foreground/30 hover:text-foreground"
+                ? "bg-primary text-primary-foreground"
+                : "bg-muted text-muted-foreground hover:bg-muted/70 hover:text-foreground"
             )}
           >
             <RatioIcon ratio={ratio} selected={selected} />
@@ -103,10 +103,10 @@ export function ResolutionPicker({
             aria-pressed={selected}
             onClick={() => onChange(resolution)}
             className={cn(
-              "rounded-lg border px-3 py-1.5 text-sm font-medium uppercase transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "rounded-lg px-3 py-1.5 text-sm font-medium uppercase transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               selected
-                ? "border-primary bg-primary/10 text-primary"
-                : "border-input text-muted-foreground hover:border-foreground/30 hover:text-foreground"
+                ? "bg-primary text-primary-foreground"
+                : "bg-muted text-muted-foreground hover:bg-muted/70 hover:text-foreground"
             )}
           >
             {resolution}

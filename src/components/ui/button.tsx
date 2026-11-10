@@ -7,11 +7,14 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        // Primary CTA — blue-to-green gradient (brand blue --primary ->
-        // --cta-to, left to right) with light text/icons, for every
-        // primary button site-wide. hover is a gentle opacity lift, never
-        // a color swap, so the gradient itself never looks "different" on
-        // hover, just slightly dimmer.
+        // Primary CTA — solid design-system accent (#01EC57, --primary)
+        // with dark, near-black text for contrast, for every primary
+        // button site-wide. Still written as a "gradient" from --primary
+        // to --cta-to (same color, both themes) rather than a flat
+        // bg-primary — this is the one spot a future rebrand would touch
+        // to bring back a two-stop CTA sweep without another pass over
+        // every call site. hover is a gentle opacity lift, never a color
+        // swap, so it never looks "different" on hover, just dimmer.
         default:
           "bg-gradient-to-r from-primary to-cta-to text-primary-foreground shadow-sm hover:opacity-90 disabled:saturate-50",
         outline:

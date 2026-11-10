@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Check, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -73,17 +73,24 @@ export function EnhancePresetPicker({
               aria-pressed={selected}
               onClick={() => onChange(preset.id, preset.name)}
               className={cn(
-                "flex flex-col gap-1 rounded-lg border p-1 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                selected ? "border-primary ring-2 ring-primary/40" : "border-input hover:border-foreground/30"
+                "flex flex-col gap-1 rounded-lg p-1 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                selected ? "bg-primary/10" : "hover:bg-muted/60"
               )}
             >
-              <span className="aspect-square w-full overflow-hidden rounded bg-muted">
+              <span className="relative aspect-square w-full overflow-hidden rounded bg-muted">
                 {preset.coverImageUrl && (
                   // eslint-disable-next-line @next/next/no-img-element -- Higgsfield CDN, not short-lived
                   <img src={preset.coverImageUrl} alt={preset.name} className="size-full object-cover" />
                 )}
+                {selected && (
+                  <span className="absolute top-1 right-1 flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                    <Check className="size-3" />
+                  </span>
+                )}
               </span>
-              <span className="truncate px-0.5 text-[11px] leading-tight">{preset.name}</span>
+              <span className={cn("truncate px-0.5 text-[11px] leading-tight", selected && "font-medium text-primary")}>
+                {preset.name}
+              </span>
             </button>
           );
         })}

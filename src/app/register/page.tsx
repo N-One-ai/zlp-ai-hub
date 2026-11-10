@@ -10,7 +10,7 @@ export default function RegisterPage() {
       footer={
         <p className="text-center text-sm text-muted-foreground">
           Đã có tài khoản?{" "}
-          <Link href="/login" className="font-medium text-[#5b85ff] hover:underline">
+          <Link href="/login" className="font-medium text-primary hover:underline">
             Đăng nhập
           </Link>
         </p>
