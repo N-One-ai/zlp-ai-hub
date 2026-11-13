@@ -1,6 +1,6 @@
 "use client";
 
-import { Type, Square, Circle, Undo2, Redo2, Grid3x3, ShieldCheck, Image as ImageIcon } from "lucide-react";
+import { Type, Square, Circle, Undo2, Redo2, Grid3x3, ShieldCheck, Image as ImageIcon, SquareDashed } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
@@ -17,6 +17,8 @@ export function EditorToolbar({
   onToggleGrid,
   showSafeZone,
   onToggleSafeZone,
+  aiRegionToolActive,
+  onToggleAiRegionTool,
 }: {
   onAddText: () => void;
   onAddShape: (kind: "rect" | "ellipse") => void;
@@ -29,6 +31,8 @@ export function EditorToolbar({
   onToggleGrid: () => void;
   showSafeZone: boolean;
   onToggleSafeZone: () => void;
+  aiRegionToolActive: boolean;
+  onToggleAiRegionTool: () => void;
 }) {
   return (
     <div className="flex items-center gap-1 flex-wrap rounded-lg border bg-card p-1.5">
@@ -43,6 +47,16 @@ export function EditorToolbar({
       </Button>
       <Button size="icon-sm" variant="ghost" onClick={onReplaceBackground} aria-label="Thay ảnh nền">
         <ImageIcon className="size-4" />
+      </Button>
+      <Button
+        size="icon-sm"
+        variant="ghost"
+        onClick={onToggleAiRegionTool}
+        aria-label="Vùng tạo ảnh AI"
+        aria-pressed={aiRegionToolActive}
+        className={cn(aiRegionToolActive && "bg-primary/15 text-primary")}
+      >
+        <SquareDashed className="size-4" />
       </Button>
 
       <Separator orientation="vertical" className="h-5 mx-1" />

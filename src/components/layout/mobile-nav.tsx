@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Library, Settings, Plus, Image as ImageIcon, LayoutTemplate, UserRound } from "lucide-react";
+import { LayoutDashboard, Library, Settings, Plus, Image as ImageIcon, LayoutTemplate, UserRound, Mic } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
@@ -64,6 +64,13 @@ export function MobileNav() {
               >
                 <UserRound className="size-4" />
                 Xây dựng nhân vật
+              </Link>
+              <Link
+                href="/create/voice"
+                className="flex items-center gap-2 rounded-md px-2.5 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
+              >
+                <Mic className="size-4" />
+                Tạo giọng nói
               </Link>
             </PopoverContent>
           </Popover>

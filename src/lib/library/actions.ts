@@ -37,3 +37,29 @@ export async function deleteAsset(assetId: string): Promise<ActionResult<null>> 
   revalidatePath("/library");
   return ok(null);
 }
+
+/** Same RLS boundary as deleteAsset above — an update that matches zero
+ * rows (not owner/admin) is reported as FORBIDDEN rather than silently
+ * doing nothing. Empty name is explicitly allowed (clears back to
+ * "Chưa đặt tên" everywhere that already falls back on an empty name),
+ * matching how the asset was allowed to be created unnamed in the first
+ * place. */
+export async function renameAsset(assetId: string, name: string): Promise<ActionResult<null>> {
+  const trimmed = name.trim().slice(0, 200);
+  const supabase = await createClient();
+
+  const { error, count } = await supabase
+    .from("creative_assets")
+    .update({ name: trimmed }, { count: "exact" })
+    .eq("id", assetId);
+
+  if (error) {
+    console.error("[renameAsset]", error);
+    return err("DB_ERROR", GENERIC_ERROR);
+  }
+  if (!count) return err("FORBIDDEN", "Bạn không có quyền đổi tên tài sản này.");
+
+  revalidatePath("/library");
+  revalidatePath("/dashboard");
+  return ok(null);
+}

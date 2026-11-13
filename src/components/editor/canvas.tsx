@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Stage, Layer, Image as KonvaImage, Text as KonvaText, Rect, Ellipse, Transformer, Line } from "react-konva";
 import type Konva from "konva";
-import { useFeatheredImage } from "./use-feathered-image";
+import { useFeatheredImage, useFrameFeatheredImage } from "./use-feathered-image";
 import { computeCoverCrop } from "@/lib/design/resize";
 import type { ResolvedLayer } from "@/types/design";
 import type { SafeZone } from "@/types/database";
@@ -15,13 +15,21 @@ function LayerNode({
   registerRef,
   onSelect,
   onChange,
+  interactionDisabled,
 }: {
   layer: ResolvedLayer;
   registerRef: (id: string, node: Konva.Node | null) => void;
   onSelect: () => void;
   onChange: (patch: Partial<ResolvedLayer>) => void;
+  /** True while the "Vùng tạo ảnh AI" draw tool is active — existing
+   * layers must not be draggable then, or starting a drag gesture over
+   * one would move it instead of drawing a new region. */
+  interactionDisabled: boolean;
 }) {
-  const image = useFeatheredImage(layer.imageUrl, layer.featherPx);
+  const isAiRegion = layer.type === "ai-region";
+  const alphaFeathered = useFeatheredImage(isAiRegion ? null : layer.imageUrl, layer.featherPx);
+  const frameFeathered = useFrameFeatheredImage(isAiRegion ? layer.imageUrl : null, layer.featherPx);
+  const image = isAiRegion ? frameFeathered : alphaFeathered;
   if (layer.visible === false) return null;
 
   const common = {
@@ -29,7 +37,7 @@ function LayerNode({
     x: layer.x,
     y: layer.y,
     rotation: layer.rotation,
-    draggable: !layer.locked,
+    draggable: !layer.locked && !interactionDisabled,
     onClick: onSelect,
     onTap: onSelect,
     ref: (node: Konva.Node | null) => registerRef(layer.id, node),
@@ -97,7 +105,12 @@ function LayerNode({
     // decoded size every render, not a stretch. image.width/height equal
     // the natural pixel size here since this <img>/<canvas> never has
     // its width/height attributes set (see use-html-image.ts).
-    if (layer.type === "background") {
+    if (layer.type === "background" || isAiRegion) {
+      // Same "cover fit, never stretched" crop as the background layer —
+      // for an ai-region, the box IS the clip boundary (see this
+      // function's doc comment in use-feathered-image.ts): drawing at
+      // exactly layer.width×layer.height already guarantees the image
+      // never spills past the region, independent of the feather above.
       const crop = computeCoverCrop(image.width, image.height, layer.width, layer.height, layer.focalX ?? 0.5, layer.focalY ?? 0.5);
       return <KonvaImage {...common} image={image} width={layer.width} height={layer.height} crop={crop} />;
     }
@@ -127,6 +140,8 @@ export function EditorCanvas({
   showSafeZone,
   safeZone,
   stageRef,
+  drawingAiRegion = false,
+  onDrawAiRegion,
 }: {
   layers: ResolvedLayer[];
   width: number;
@@ -139,9 +154,15 @@ export function EditorCanvas({
   showSafeZone: boolean;
   safeZone: SafeZone;
   stageRef: React.RefObject<Konva.Stage | null>;
+  /** True while the "Vùng tạo ảnh AI" tool is active — the next
+   * drag-on-empty-canvas draws a new region instead of panning/selecting. */
+  drawingAiRegion?: boolean;
+  onDrawAiRegion?: (rect: { x: number; y: number; width: number; height: number }) => void;
 }) {
   const nodeRefs = useRef(new Map<string, Konva.Node>());
   const transformerRef = useRef<Konva.Transformer>(null);
+  const draftStartRef = useRef<{ x: number; y: number } | null>(null);
+  const [draftRect, setDraftRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
 
   function registerRef(id: string, node: Konva.Node | null) {
     if (node) nodeRefs.current.set(id, node);
@@ -181,6 +202,10 @@ export function EditorCanvas({
     }
   }
 
+  function clampPoint(x: number, y: number) {
+    return { x: Math.min(Math.max(x, 0), width), y: Math.min(Math.max(y, 0), height) };
+  }
+
   return (
     <Stage
       ref={stageRef}
@@ -188,10 +213,45 @@ export function EditorCanvas({
       height={height * displayScale}
       scaleX={displayScale}
       scaleY={displayScale}
+      className={drawingAiRegion ? "bg-white cursor-crosshair" : "bg-white"}
       onMouseDown={(e) => {
+        if (drawingAiRegion) {
+          const pos = e.target.getStage()?.getPointerPosition();
+          if (!pos) return;
+          const start = clampPoint(pos.x, pos.y);
+          draftStartRef.current = start;
+          setDraftRect({ x: start.x, y: start.y, width: 0, height: 0 });
+          return;
+        }
         if (e.target === e.target.getStage()) onSelect(null);
       }}
-      className="bg-white"
+      onMouseMove={(e) => {
+        if (!drawingAiRegion || !draftStartRef.current) return;
+        const pos = e.target.getStage()?.getPointerPosition();
+        if (!pos) return;
+        const current = clampPoint(pos.x, pos.y);
+        const start = draftStartRef.current;
+        setDraftRect({
+          x: Math.min(start.x, current.x),
+          y: Math.min(start.y, current.y),
+          width: Math.abs(current.x - start.x),
+          height: Math.abs(current.y - start.y),
+        });
+      }}
+      onMouseUp={() => {
+        if (!drawingAiRegion || !draftStartRef.current) return;
+        draftStartRef.current = null;
+        const rect = draftRect;
+        setDraftRect(null);
+        if (rect && rect.width >= 16 && rect.height >= 16) {
+          onDrawAiRegion?.({
+            x: Math.round(rect.x),
+            y: Math.round(rect.y),
+            width: Math.round(rect.width),
+            height: Math.round(rect.height),
+          });
+        }
+      }}
     >
       <Layer>
         <Rect x={0} y={0} width={width} height={height} fill="#ffffff" listening={false} />
@@ -203,8 +263,22 @@ export function EditorCanvas({
             registerRef={registerRef}
             onSelect={() => onSelect(layer.id)}
             onChange={(patch) => onChangeLayer(layer.id, patch)}
+            interactionDisabled={drawingAiRegion}
           />
         ))}
+        {draftRect && (
+          <Rect
+            x={draftRect.x}
+            y={draftRect.y}
+            width={draftRect.width}
+            height={draftRect.height}
+            stroke="#f97316"
+            strokeWidth={2}
+            dash={[8, 6]}
+            fill="rgba(249,115,22,0.1)"
+            listening={false}
+          />
+        )}
         {showSafeZone && (
           <Rect
             x={leftPx}
