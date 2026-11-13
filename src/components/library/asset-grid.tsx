@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  AlertTriangle,
   Download,
   Eye,
   Image as ImageIcon,
@@ -12,11 +13,14 @@ import {
   List,
   Loader2,
   MoreVertical,
+  Music,
+  Pencil,
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -34,7 +38,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { deleteAsset } from "@/lib/library/actions";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { deleteAsset, renameAsset } from "@/lib/library/actions";
 import { trackEvent } from "@/lib/analytics/track";
 import { ASSET_STATUS_LABEL, ASSET_TYPE_LABEL } from "@/lib/library/labels";
 import type { LibraryAssetListItem } from "@/types/library";
@@ -46,7 +52,9 @@ const STATUS_BADGE_CLASS: Record<LibraryAssetListItem["status"], string> = {
 };
 
 function TypeIcon({ type, className }: { type: LibraryAssetListItem["type"]; className?: string }) {
-  return type === "banner" ? <LayoutTemplate className={className} /> : <ImageIcon className={className} />;
+  if (type === "banner") return <LayoutTemplate className={className} />;
+  if (type === "audio") return <Music className={className} />;
+  return <ImageIcon className={className} />;
 }
 
 /** Real, honest placeholder for an asset with no storage_path yet — never
@@ -62,21 +70,72 @@ function NoPreview({ type }: { type: LibraryAssetListItem["type"] }) {
     <div className="flex flex-col items-center gap-1.5 text-muted-foreground">
       <TypeIcon type={type} className="size-6" />
       <span className="px-2 text-center text-[11px] font-medium leading-tight">
-        {type === "banner" ? "Chưa xuất bản xem trước" : "Chưa có bản xem trước"}
+        {type === "banner" ? "Chưa xuất bản xem trước" : type === "audio" ? "Chưa có file âm thanh" : "Chưa có bản xem trước"}
       </span>
     </div>
   );
 }
 
-function AssetThumb({ asset, className }: { asset: LibraryAssetListItem; className?: string }) {
+/** Audio has no visual thumbnail at all — the file itself (thumbnailUrl,
+ * same signed storage_path URL every other type reuses for its preview)
+ * is only ever meant to be <audio>'d, never <img>'d. Rendering it through
+ * AssetThumb's generic <img> path would make a perfectly fine mp3 file
+ * show up as a false "ảnh lỗi", which is worse than just never trying. */
+function AudioThumb({ asset, className }: { asset: LibraryAssetListItem; className?: string }) {
   return (
     <div className={cn("flex items-center justify-center overflow-hidden bg-muted/40", className)}>
       {asset.thumbnailUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element -- short-lived signed URL
-        <img src={asset.thumbnailUrl} alt={asset.name || "Tài sản chưa đặt tên"} className="max-h-full max-w-full object-contain" />
+        <Music className="size-6 text-primary" />
       ) : (
         <NoPreview type={asset.type} />
       )}
+    </div>
+  );
+}
+
+/** Three real, honest preview states (never a blank box that could be
+ * mistaken for a successfully generated — but empty — image):
+ * no thumbnailUrl at all -> NoPreview; thumbnailUrl present but still
+ * decoding -> a pulsing skeleton behind it; thumbnailUrl present but the
+ * request failed (expired signed URL, deleted Storage object, network
+ * error) -> a distinct "ảnh lỗi" state, never silently falling back to
+ * NoPreview's "chưa có" wording, which would misreport a real failure as
+ * "nothing generated yet". */
+function AssetThumb({ asset, className }: { asset: LibraryAssetListItem; className?: string }) {
+  const [state, setState] = useState<"loading" | "loaded" | "error">(asset.thumbnailUrl ? "loading" : "loaded");
+
+  if (asset.type === "audio") return <AudioThumb asset={asset} className={className} />;
+
+  if (!asset.thumbnailUrl) {
+    return (
+      <div className={cn("flex items-center justify-center overflow-hidden bg-muted/40", className)}>
+        <NoPreview type={asset.type} />
+      </div>
+    );
+  }
+
+  if (state === "error") {
+    return (
+      <div className={cn("flex items-center justify-center overflow-hidden bg-destructive/5", className)}>
+        <div className="flex flex-col items-center gap-1.5 text-destructive/80">
+          <AlertTriangle className="size-6" />
+          <span className="px-2 text-center text-[11px] font-medium leading-tight">Không tải được ảnh</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={cn("relative flex items-center justify-center overflow-hidden bg-muted/40", className)}>
+      {state === "loading" && <div className="absolute inset-0 animate-pulse bg-muted" />}
+      {/* eslint-disable-next-line @next/next/no-img-element -- short-lived signed URL */}
+      <img
+        src={asset.thumbnailUrl}
+        alt={asset.name || "Tài sản chưa đặt tên"}
+        className={cn("max-h-full max-w-full object-contain transition-opacity", state === "loading" && "opacity-0")}
+        onLoad={() => setState("loaded")}
+        onError={() => setState("error")}
+      />
     </div>
   );
 }
@@ -86,11 +145,13 @@ function AssetActions({
   canDelete,
   isPending,
   onRequestDelete,
+  onRequestRename,
 }: {
   asset: LibraryAssetListItem;
   canDelete: boolean;
   isPending: boolean;
   onRequestDelete: (asset: LibraryAssetListItem) => void;
+  onRequestRename: (asset: LibraryAssetListItem) => void;
 }) {
   return (
     <DropdownMenu>
@@ -121,6 +182,12 @@ function AssetActions({
           </DropdownMenuItem>
         )}
         {canDelete && (
+          <DropdownMenuItem onClick={() => onRequestRename(asset)}>
+            <Pencil className="size-4" />
+            Đổi tên
+          </DropdownMenuItem>
+        )}
+        {canDelete && (
           <>
             <DropdownMenuSeparator />
             <DropdownMenuItem variant="destructive" onClick={() => onRequestDelete(asset)}>
@@ -139,11 +206,13 @@ function GridCard({
   canDelete,
   isPending,
   onRequestDelete,
+  onRequestRename,
 }: {
   asset: LibraryAssetListItem;
   canDelete: boolean;
   isPending: boolean;
   onRequestDelete: (asset: LibraryAssetListItem) => void;
+  onRequestRename: (asset: LibraryAssetListItem) => void;
 }) {
   return (
     <Link
@@ -157,9 +226,17 @@ function GridCard({
         </Badge>
       </div>
       <div className="flex items-start gap-1.5 px-3 pt-2.5 pb-1">
-        <span className="min-w-0 flex-1 truncate text-sm font-medium">{asset.name || "Chưa đặt tên"}</span>
+        <span title={asset.name || "Chưa đặt tên"} className="min-w-0 flex-1 truncate text-sm font-medium">
+          {asset.name || "Chưa đặt tên"}
+        </span>
         <div onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
-          <AssetActions asset={asset} canDelete={canDelete} isPending={isPending} onRequestDelete={onRequestDelete} />
+          <AssetActions
+            asset={asset}
+            canDelete={canDelete}
+            isPending={isPending}
+            onRequestDelete={onRequestDelete}
+            onRequestRename={onRequestRename}
+          />
         </div>
       </div>
       <div className="flex items-center gap-1 px-3 pb-2.5 text-xs text-muted-foreground">
@@ -176,11 +253,13 @@ function ListRow({
   canDelete,
   isPending,
   onRequestDelete,
+  onRequestRename,
 }: {
   asset: LibraryAssetListItem;
   canDelete: boolean;
   isPending: boolean;
   onRequestDelete: (asset: LibraryAssetListItem) => void;
+  onRequestRename: (asset: LibraryAssetListItem) => void;
 }) {
   return (
     <Link
@@ -189,7 +268,9 @@ function ListRow({
     >
       <AssetThumb asset={asset} className="size-12 shrink-0 rounded-lg" />
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium">{asset.name || "Chưa đặt tên"}</p>
+        <p title={asset.name || "Chưa đặt tên"} className="truncate text-sm font-medium">
+          {asset.name || "Chưa đặt tên"}
+        </p>
         <p className="flex items-center gap-1 truncate text-xs text-muted-foreground">
           <span className="truncate">{asset.brandName}</span>
           <span>·</span>
@@ -203,7 +284,13 @@ function ListRow({
         {new Date(asset.createdAt).toLocaleDateString("vi-VN")}
       </span>
       <div onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
-        <AssetActions asset={asset} canDelete={canDelete} isPending={isPending} onRequestDelete={onRequestDelete} />
+        <AssetActions
+          asset={asset}
+          canDelete={canDelete}
+          isPending={isPending}
+          onRequestDelete={onRequestDelete}
+          onRequestRename={onRequestRename}
+        />
       </div>
     </Link>
   );
@@ -221,6 +308,9 @@ export function AssetGrid({
   const router = useRouter();
   const [view, setView] = useState<"grid" | "list">("grid");
   const [deleteTarget, setDeleteTarget] = useState<LibraryAssetListItem | null>(null);
+  const [renameTarget, setRenameTarget] = useState<LibraryAssetListItem | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [isRenaming, setIsRenaming] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   if (assets.length === 0) return null;
@@ -243,6 +333,28 @@ export function AssetGrid({
       setDeleteTarget(null);
       router.refresh();
     });
+  }
+
+  function openRename(asset: LibraryAssetListItem) {
+    setRenameTarget(asset);
+    setRenameValue(asset.name);
+  }
+
+  async function handleConfirmRename() {
+    if (!renameTarget) return;
+    setIsRenaming(true);
+    try {
+      const result = await renameAsset(renameTarget.id, renameValue);
+      if (!result.ok) {
+        toast.error(result.error.message);
+        return;
+      }
+      toast.success("Đã đổi tên.");
+      setRenameTarget(null);
+      router.refresh();
+    } finally {
+      setIsRenaming(false);
+    }
   }
 
   return (
@@ -285,6 +397,7 @@ export function AssetGrid({
               canDelete={canDelete(asset)}
               isPending={isPending}
               onRequestDelete={setDeleteTarget}
+              onRequestRename={openRename}
             />
           ))}
         </div>
@@ -297,6 +410,7 @@ export function AssetGrid({
               canDelete={canDelete(asset)}
               isPending={isPending}
               onRequestDelete={setDeleteTarget}
+              onRequestRename={openRename}
             />
           ))}
         </div>
@@ -324,6 +438,33 @@ export function AssetGrid({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={renameTarget !== null} onOpenChange={(open) => !open && setRenameTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Đổi tên tài sản</DialogTitle>
+          </DialogHeader>
+          <Input
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            placeholder="Tên tài sản"
+            maxLength={200}
+            autoFocus
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void handleConfirmRename();
+            }}
+          />
+          <DialogFooter>
+            <Button type="button" variant="outline" disabled={isRenaming} onClick={() => setRenameTarget(null)}>
+              Huỷ
+            </Button>
+            <Button type="button" disabled={isRenaming} onClick={handleConfirmRename}>
+              {isRenaming ? <Loader2 className="size-4 animate-spin" /> : null}
+              Lưu
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

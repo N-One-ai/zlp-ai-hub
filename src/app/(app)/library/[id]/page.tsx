@@ -17,7 +17,7 @@ const STATUS_STYLE = {
   ready: "bg-success/15 text-success",
   archived: "bg-muted text-muted-foreground",
 } as const;
-const TYPE_LABEL = { image: "Ảnh", banner: "Banner", video: "Video" } as const;
+const TYPE_LABEL = { image: "Ảnh", banner: "Banner", video: "Video", audio: "Giọng nói" } as const;
 
 export default async function AssetDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -36,12 +36,14 @@ export default async function AssetDetailPage({ params }: { params: Promise<{ id
 
       <div className="grid lg:grid-cols-[1fr_320px] gap-6">
         <div className="flex flex-col gap-4">
-          <div className="rounded-xl border border-border bg-muted/30 overflow-hidden flex items-center justify-center min-h-64">
-            {asset.fileUrl ? (
+          <div className="rounded-xl border border-border bg-muted/30 overflow-hidden flex items-center justify-center min-h-64 p-4">
+            {!asset.fileUrl ? (
+              <p className="text-sm text-muted-foreground py-16">Chưa có file.</p>
+            ) : asset.type === "audio" ? (
+              <audio controls src={asset.fileUrl} className="w-full max-w-md" />
+            ) : (
               // eslint-disable-next-line @next/next/no-img-element -- short-lived signed URL
               <img src={asset.fileUrl} alt={asset.name} className="max-w-full max-h-[70vh] object-contain" />
-            ) : (
-              <p className="text-sm text-muted-foreground py-16">Chưa có file.</p>
             )}
           </div>
 

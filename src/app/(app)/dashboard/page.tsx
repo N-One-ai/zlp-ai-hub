@@ -1,12 +1,12 @@
 import Link from "next/link";
-import { Image as ImageIcon, LayoutTemplate, Loader2, Library, Palette, Users, ArrowRight } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
+import { Image as ImageIcon, LayoutTemplate, Library, Palette, Users, ArrowRight } from "lucide-react";
 import { requireActiveWorkspace } from "@/lib/workspace/guards";
 import { getRecentAssets, getLibraryAssets } from "@/lib/library/queries";
-import { getIncompleteJobs } from "@/lib/generation/queries";
+import { getRecentGenerationJobs, type DashboardJobSummary } from "@/lib/generation/queries";
 import { getBrands } from "@/lib/brand/queries";
 import { getWorkspaceMembers, getCurrentUser } from "@/lib/workspace/queries";
 import { AssetGrid } from "@/components/library/asset-grid";
+import { DashboardJobsPanel } from "@/components/dashboard/jobs-panel";
 import { StatCard } from "@/components/layout/stat-card";
 import { EmptyState } from "@/components/layout/empty-state";
 import { ImageHeroArt } from "@/components/dashboard/image-hero-art";
@@ -15,9 +15,21 @@ import { DashboardHeroArt } from "@/components/dashboard/dashboard-hero-art";
 
 export default async function DashboardPage() {
   const workspace = await requireActiveWorkspace();
-  const [recentAssets, incompleteJobs, brands, members, libraryTotal, user] = await Promise.all([
+
+  // Fetched separately from the Promise.all below — a real backend
+  // failure here must show an honest error state in the jobs panel, not
+  // be swallowed into "no jobs" (which getRecentGenerationJobs itself
+  // deliberately doesn't do — it throws rather than returning []).
+  let recentJobs: DashboardJobSummary[] = [];
+  let jobsLoadError = false;
+  try {
+    recentJobs = await getRecentGenerationJobs();
+  } catch {
+    jobsLoadError = true;
+  }
+
+  const [recentAssets, brands, members, libraryTotal, user] = await Promise.all([
     getRecentAssets(workspace.workspaceId),
-    getIncompleteJobs(),
     getBrands(workspace.workspaceId),
     getWorkspaceMembers(workspace.workspaceId),
     getLibraryAssets(workspace.workspaceId, {}),
@@ -105,25 +117,10 @@ export default async function DashboardPage() {
         <StatCard label="Thành viên" value={members.filter((m) => m.status === "active").length} icon={Users} />
       </div>
 
-      {incompleteJobs.length > 0 && (
-        <Card>
-          <CardContent className="flex flex-col gap-1">
-            <h2 className="text-sm font-semibold mb-1">Tác vụ chưa hoàn tất</h2>
-            <div className="flex flex-col divide-y divide-border">
-              {incompleteJobs.map((job) => (
-                <Link
-                  key={job.id}
-                  href={`/create/image?job=${job.id}`}
-                  className="flex items-center gap-2 py-2 text-sm hover:text-foreground"
-                >
-                  <Loader2 className="size-3.5 animate-spin text-primary shrink-0" />
-                  <span className="flex-1 truncate text-muted-foreground">{job.prompt}</span>
-                </Link>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      <div className="flex flex-col gap-3">
+        <h2 className="font-heading text-base font-semibold">Tác vụ gần đây</h2>
+        <DashboardJobsPanel jobs={recentJobs} loadError={jobsLoadError} />
+      </div>
 
       <div className="flex flex-col gap-3">
         <div className="flex items-center justify-between">

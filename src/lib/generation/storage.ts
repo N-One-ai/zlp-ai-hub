@@ -62,6 +62,11 @@ export function extensionForContentType(contentType: string): string {
       return "png";
     case "image/webp":
       return "webp";
+    case "audio/mpeg":
+      return "mp3";
+    case "audio/wav":
+    case "audio/x-wav":
+      return "wav";
     case "image/jpeg":
     default:
       return "jpg";

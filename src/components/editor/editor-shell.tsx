@@ -1,12 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { useRouter } from "next/navigation";
 import type Konva from "konva";
-import { Loader2, Save, Download, Copy, Sparkles } from "lucide-react";
+import { Loader2, Save, Download, Copy, Sparkles, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -21,6 +23,7 @@ import { AiImagePanel } from "./ai-image-panel";
 import { GuidelinePanel } from "./guideline-panel";
 import { BrandPicker } from "@/components/brand/brand-picker";
 import { SizePresetPicker } from "@/components/brand/size-preset-picker";
+import { ModelPicker } from "@/components/generate/model-picker";
 import {
   saveDesignDocument,
   exportDesign,
@@ -28,7 +31,13 @@ import {
   changeBannerBrand,
   getBrandImageAssetsAction,
 } from "@/lib/design/actions";
-import { uploadImageAsset } from "@/lib/generation/actions";
+import {
+  uploadImageAsset,
+  generateImages,
+  getGenerationJobAction,
+  saveGenerationResult,
+  resolveAssetAsReference,
+} from "@/lib/generation/actions";
 import { checkGuideline, hasBlockingFailure } from "@/lib/design/guideline-check";
 import { scaleLayersToSize } from "@/lib/design/resize";
 import { getDefaultLogoBox } from "@/lib/design/logo-size";
@@ -36,7 +45,11 @@ import { trackEvent } from "@/lib/analytics/track";
 import type { ResolvedLayer } from "@/types/design";
 import type { Brand, GuidelineVersion, SizePreset } from "@/types/brand";
 import type { ExportFormat } from "@/types/database";
-import type { ModelMeta } from "@/lib/generation/model-meta";
+import { AUTO_MODEL_ID, type ModelMeta } from "@/lib/generation/model-meta";
+import type { GenerationJob } from "@/types/generation";
+
+const AI_REGION_POLL_INTERVAL_MS = 1_500;
+const AI_REGION_POLL_MAX_ATTEMPTS = 100;
 
 const MAX_DISPLAY_WIDTH = 640;
 const MAX_HISTORY = 50;
@@ -140,6 +153,10 @@ export function EditorShell({
   const [isExporting, setIsExporting] = useState(false);
   const [isDuplicating, setIsDuplicating] = useState(false);
   const [aiPanelOpen, setAiPanelOpen] = useState(false);
+  const [activeTool, setActiveTool] = useState<"select" | "ai-region">("select");
+  const [regionGenerating, setRegionGenerating] = useState(false);
+  const [regionStatus, setRegionStatus] = useState<string | null>(null);
+  const [regionModel, setRegionModel] = useState<string>(AUTO_MODEL_ID);
 
   // The active size preset lives in state (not just a prop) so switching
   // it in-editor updates the canvas/preview immediately — see
@@ -412,6 +429,101 @@ export function EditorShell({
     pushHistory(layers.map((l) => (l.id === a.id ? { ...l, zIndex: b.zIndex } : l.id === b.id ? { ...l, zIndex: aZ } : l)));
   }
 
+  /** Finishes a drag-to-draw gesture from the "Vùng tạo ảnh AI" tool —
+   * creates the empty frame (no image yet) at the drawn artboard-space
+   * rect, selects it, and switches back to the normal select tool so the
+   * next mouse drag on canvas doesn't immediately start another region. */
+  function handleCreateAiRegion(rect: { x: number; y: number; width: number; height: number }) {
+    const layer: ResolvedLayer = {
+      id: newLayerId(),
+      type: "ai-region",
+      x: rect.x,
+      y: rect.y,
+      width: Math.max(16, rect.width),
+      height: Math.max(16, rect.height),
+      rotation: 0,
+      zIndex: Math.max(0, ...layers.map((l) => l.zIndex)) + 1,
+    };
+    pushHistory([...layers, layer]);
+    setSelectedId(layer.id);
+    setActiveTool("select");
+  }
+
+  /** Generates an image for the currently-selected ai-region layer.
+   *
+   * IMPORTANT, honest limitation: no provider this app integrates with
+   * (see providers/*.ts) supports real inpainting/mask-scoped generation
+   * — there is no "only draw inside this rectangle of the existing
+   * canvas" API call to make. This requests a plain image at (as close
+   * as the chosen model supports to) the region's own pixel size, then
+   * relies entirely on the EXISTING client-side cover-fit crop (same
+   * computeCoverCrop the background layer already uses, see canvas.tsx)
+   * to keep it visually confined to the region's box — the model itself
+   * never sees or respects the region's boundary or whatever is behind
+   * it on the canvas. */
+  async function handleGenerateAiRegionImage() {
+    if (!selectedLayer || selectedLayer.type !== "ai-region" || regionGenerating) return;
+    const prompt = (selectedLayer.aiPrompt ?? "").trim();
+    if (!prompt) return;
+    const regionId = selectedLayer.id;
+    setRegionGenerating(true);
+    setRegionStatus("Đang gửi yêu cầu...");
+    try {
+      const result = await generateImages({
+        brandId,
+        prompt,
+        negativePrompt: "",
+        count: 1,
+        model: regionModel,
+        exactSize: { width: Math.max(1, Math.round(selectedLayer.width)), height: Math.max(1, Math.round(selectedLayer.height)) },
+      });
+      if (!result.ok) {
+        toast.error(result.error.message);
+        return;
+      }
+
+      let job: GenerationJob | null = null;
+      for (let i = 0; i < AI_REGION_POLL_MAX_ATTEMPTS; i++) {
+        job = await getGenerationJobAction(result.data.jobId);
+        if (job && (job.status === "succeeded" || job.status === "failed")) break;
+        if (job) {
+          const last = job.attempts.at(-1);
+          setRegionStatus(last?.status === "started" ? `Đang tạo bằng ${last.model}…` : "Đang tạo ảnh...");
+        }
+        await new Promise((resolve) => setTimeout(resolve, AI_REGION_POLL_INTERVAL_MS));
+      }
+
+      if (!job || job.status !== "succeeded" || !job.results[0]) {
+        toast.error(job?.error || "Không thể tạo ảnh lúc này. Vui lòng thử lại.");
+        return;
+      }
+
+      const saved = await saveGenerationResult({ jobId: job.id, outputIndex: 0, name: prompt.slice(0, 80) });
+      if (!saved.ok) {
+        toast.error(saved.error.message);
+        return;
+      }
+      const signedUrl = await resolveAssetAsReference(saved.data.assetId);
+      if (!signedUrl.ok) {
+        toast.error(signedUrl.error.message);
+        return;
+      }
+      // The region may have been resized/deselected while this request was
+      // in flight — always patch by the id captured at request time, never
+      // "whatever is selected now".
+      updateLayer(regionId, {
+        imagePath: saved.data.path,
+        imageUrl: signedUrl.data.url,
+        focalX: 0.5,
+        focalY: 0.5,
+      });
+      toast.success("Đã tạo ảnh trong vùng đã chọn.");
+    } finally {
+      setRegionGenerating(false);
+      setRegionStatus(null);
+    }
+  }
+
   /** Switches the active size preset in-editor — no round trip to the
    * setup step. The background layer's imagePath is never touched (same
    * master image reused, only its destination box + live cover-fit crop
@@ -567,6 +679,17 @@ export function EditorShell({
         exportVersion = saved.version;
       }
 
+      // Deselect synchronously before rasterizing — the Transformer's
+      // selection outline/resize handles live in the SAME Konva Layer as
+      // every real layer, so without this they'd be baked straight into
+      // the exported file whenever something happens to be selected (this
+      // was already true for every layer type, not just the new ai-region
+      // frame — fixed at the root here rather than special-cased per
+      // layer). flushSync forces the deselect to actually re-render and
+      // redraw the stage before toDataURL reads its pixels; a plain
+      // setState wouldn't apply in time since toDataURL is synchronous.
+      const selectionBeforeExport = selectedId;
+      flushSync(() => setSelectedId(null));
       // Native resolution regardless of on-screen display scale.
       const pixelRatio = 1 / displayScale;
       const dataUrl = stage.toDataURL({
@@ -574,6 +697,7 @@ export function EditorShell({
         quality: 0.92,
         pixelRatio,
       });
+      flushSync(() => setSelectedId(selectionBeforeExport));
       const res = await fetch(dataUrl);
       const bytes = new Uint8Array(await res.arrayBuffer());
 
@@ -628,6 +752,8 @@ export function EditorShell({
               onToggleGrid={() => setShowGrid((v) => !v)}
               showSafeZone={showSafeZone}
               onToggleSafeZone={() => setShowSafeZone((v) => !v)}
+              aiRegionToolActive={activeTool === "ai-region"}
+              onToggleAiRegionTool={() => setActiveTool((t) => (t === "ai-region" ? "select" : "ai-region"))}
             />
             {presets.length > 0 && (
               <div className="w-48">
@@ -677,6 +803,10 @@ export function EditorShell({
           </p>
         )}
 
+        {activeTool === "ai-region" && (
+          <p className="text-xs text-primary">Kéo một khung trên canvas để tạo vùng tạo ảnh AI mới.</p>
+        )}
+
         <div className="overflow-auto rounded-lg border bg-muted/30 p-4 flex items-center justify-center">
           <EditorCanvas
             layers={layers}
@@ -686,6 +816,8 @@ export function EditorShell({
             selectedId={selectedId}
             onSelect={setSelectedId}
             onChangeLayer={updateLayer}
+            drawingAiRegion={activeTool === "ai-region"}
+            onDrawAiRegion={handleCreateAiRegion}
             showGrid={showGrid}
             showSafeZone={showSafeZone}
             safeZone={guideline?.safeZone ?? {}}
@@ -829,6 +961,89 @@ export function EditorShell({
             </CardHeader>
             <CardContent>
               <ImageProperties layer={selectedLayer} onChange={(patch) => updateLayer(selectedLayer.id, patch)} />
+            </CardContent>
+          </Card>
+        )}
+
+        {selectedLayer?.type === "ai-region" && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm">Vùng tạo ảnh AI</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3">
+              <p className="text-xs text-muted-foreground">
+                Vùng {Math.round(selectedLayer.width)}×{Math.round(selectedLayer.height)} px. Ảnh được tạo sẽ fit/crop
+                vừa khít vùng này, không tràn ra ngoài — model hiện chưa hỗ trợ giới hạn vùng tạo ảnh theo mask thật
+                (inpainting), app chỉ fit/crop kết quả sau khi tạo.
+              </p>
+              <Textarea
+                value={selectedLayer.aiPrompt ?? ""}
+                onChange={(e) => updateLayer(selectedLayer.id, { aiPrompt: e.target.value })}
+                placeholder="Mô tả ảnh muốn tạo trong vùng này..."
+                rows={3}
+                maxLength={2000}
+                disabled={regionGenerating}
+              />
+              <ModelPicker models={models} value={regionModel} onChange={setRegionModel} />
+              <Button
+                type="button"
+                size="sm"
+                disabled={regionGenerating || !(selectedLayer.aiPrompt ?? "").trim()}
+                onClick={handleGenerateAiRegionImage}
+              >
+                {regionGenerating ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
+                {regionGenerating ? "Đang tạo..." : selectedLayer.imageUrl ? "Tạo lại ảnh" : "Tạo ảnh"}
+              </Button>
+              {regionGenerating && regionStatus && <p className="text-xs text-muted-foreground">{regionStatus}</p>}
+
+              {selectedLayer.imageUrl && (
+                <>
+                  <div className="flex flex-col gap-1.5">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs">Feather viền</Label>
+                      <span className="text-xs tabular-nums text-muted-foreground">{selectedLayer.featherPx ?? 0}px</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={48}
+                      step={1}
+                      value={selectedLayer.featherPx ?? 0}
+                      onChange={(e) => updateLayer(selectedLayer.id, { featherPx: Number(e.target.value) })}
+                      className="w-full accent-primary"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label className="text-xs">Vị trí crop — Ngang</Label>
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      value={selectedLayer.focalX ?? 0.5}
+                      onChange={(e) => updateLayer(selectedLayer.id, { focalX: Number(e.target.value) })}
+                      className="w-full accent-primary"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label className="text-xs">Vị trí crop — Dọc</Label>
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      value={selectedLayer.focalY ?? 0.5}
+                      onChange={(e) => updateLayer(selectedLayer.id, { focalY: Number(e.target.value) })}
+                      className="w-full accent-primary"
+                    />
+                  </div>
+                </>
+              )}
+
+              <Button type="button" size="sm" variant="outline" onClick={() => handleDeleteLayer(selectedLayer.id)}>
+                <Trash2 className="size-3.5" />
+                Xoá vùng
+              </Button>
             </CardContent>
           </Card>
         )}

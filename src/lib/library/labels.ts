@@ -7,6 +7,7 @@ export const ASSET_TYPE_LABEL: Record<CreativeAssetType, string> = {
   image: "Ảnh",
   banner: "Banner",
   video: "Video",
+  audio: "Giọng nói",
 };
 
 export const ASSET_STATUS_LABEL: Record<CreativeAssetStatus, string> = {

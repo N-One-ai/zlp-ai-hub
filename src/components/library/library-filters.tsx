@@ -98,6 +98,7 @@ export function LibraryFilters({ brands, members }: { brands: Brand[]; members: 
           <SelectItem value={ALL}>Tất cả loại</SelectItem>
           <SelectItem value="image">{ASSET_TYPE_LABEL.image}</SelectItem>
           <SelectItem value="banner">{ASSET_TYPE_LABEL.banner}</SelectItem>
+          <SelectItem value="audio">{ASSET_TYPE_LABEL.audio}</SelectItem>
         </SelectContent>
       </Select>
 

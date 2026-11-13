@@ -16,7 +16,7 @@ export type ChangeBannerBrandInput = z.infer<typeof changeBannerBrandSchema>;
 
 const layerSchema = z.object({
   id: z.string().min(1),
-  type: z.enum(["background", "image", "text", "logo", "shape"]),
+  type: z.enum(["background", "image", "text", "logo", "shape", "ai-region"]),
   x: z.number(),
   y: z.number(),
   width: z.number().min(0),
@@ -30,6 +30,7 @@ const layerSchema = z.object({
   featherPx: z.number().min(0).max(64).optional(),
   focalX: z.number().min(0).max(1).optional(),
   focalY: z.number().min(0).max(1).optional(),
+  aiPrompt: z.string().max(2000).optional(),
   text: z.string().optional(),
   fontFamily: z.string().optional(),
   fontFallback: z.string().optional(),

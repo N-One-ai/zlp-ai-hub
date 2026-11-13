@@ -305,6 +305,69 @@ export interface Database {
         };
         Relationships: [];
       };
+      voice_generation_jobs: {
+        Row: {
+          id: string;
+          workspace_id: string;
+          brand_id: string;
+          user_id: string;
+          text: string;
+          voice_code: string;
+          voice_name: string;
+          mode: "sync" | "async";
+          output_format: "mp3" | "wav";
+          bitrate: number;
+          speed: number;
+          sample_rate: number | null;
+          vbee_request_id: string | null;
+          status: VoiceGenerationJobStatus;
+          error: string | null;
+          storage_path: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          workspace_id: string;
+          brand_id: string;
+          user_id: string;
+          text: string;
+          voice_code: string;
+          voice_name?: string;
+          mode: "sync" | "async";
+          output_format?: "mp3" | "wav";
+          bitrate?: number;
+          speed?: number;
+          sample_rate?: number | null;
+          vbee_request_id?: string | null;
+          status?: VoiceGenerationJobStatus;
+          error?: string | null;
+          storage_path?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          workspace_id?: string;
+          brand_id?: string;
+          user_id?: string;
+          text?: string;
+          voice_code?: string;
+          voice_name?: string;
+          mode?: "sync" | "async";
+          output_format?: "mp3" | "wav";
+          bitrate?: number;
+          speed?: number;
+          sample_rate?: number | null;
+          vbee_request_id?: string | null;
+          status?: VoiceGenerationJobStatus;
+          error?: string | null;
+          storage_path?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       characters: {
         Row: {
           id: string;
@@ -605,6 +668,8 @@ export interface TemplateLayout {
 
 export type GenerationJobStatus = "queued" | "processing" | "succeeded" | "failed" | "cancelled";
 
+export type VoiceGenerationJobStatus = "processing" | "succeeded" | "failed";
+
 /** Shared between generation_jobs.character_view and characters.gender —
  * defined here (not in types/character.ts) since both Database table
  * shapes above reference them and types/character.ts already imports
@@ -663,10 +728,10 @@ export interface GenerationAttempt {
   adjustments?: string[];
 }
 
-export type CreativeAssetType = "image" | "banner" | "video";
+export type CreativeAssetType = "image" | "banner" | "video" | "audio";
 export type CreativeAssetStatus = "draft" | "ready" | "archived";
 
-export type DesignLayerType = "background" | "image" | "text" | "logo" | "shape";
+export type DesignLayerType = "background" | "image" | "text" | "logo" | "shape" | "ai-region";
 export type TextAlign = "left" | "center" | "right";
 export type ShapeKind = "rect" | "ellipse";
 
@@ -696,21 +761,32 @@ export interface DesignLayer {
   role?: "tagline" | "subtitle";
   // image / background / logo
   imagePath?: string;
-  /** Background-layer-only "cover fit" focal point (0..1, default 0.5/0.5
-   * = centered) — how the source image's natural aspect ratio is cropped
-   * to fill this layer's destination box without ever stretching it. The
-   * actual crop rect is recomputed live from the image's real decoded
-   * size every render (see computeCoverCrop in lib/design/resize.ts) —
-   * only the focal point itself is persisted. */
+  /** "Cover fit" focal point (0..1, default 0.5/0.5 = centered) — how the
+   * source image's natural aspect ratio is cropped to fill this layer's
+   * destination box without ever stretching it. Used by "background" AND
+   * "ai-region" layers (an ai-region's own box IS its clip boundary — see
+   * canvas.tsx). The actual crop rect is recomputed live from the image's
+   * real decoded size every render (see computeCoverCrop in
+   * lib/design/resize.ts) — only the focal point itself is persisted. */
   focalX?: number;
   focalY?: number;
-  /** Only set on an "image" layer produced by the AI-background feature's
-   * local segmentation (see lib/image-processing/background-removal.ts) —
-   * its presence is what tells the canvas to render with a LIVE,
-   * re-adjustable feathered alpha instead of the image as-is. 0 = hard
-   * edge (no feather), max 64. Absent entirely for every other image/
-   * background/logo layer, which never go through this pipeline. */
+  /** Two different features reuse this one field with two different
+   * MEANINGS, never both on the same layer: on an "image" layer from the
+   * AI-background cutout feature (lib/image-processing/background-
+   * removal.ts), it softens that image's own EXISTING hard alpha-mask
+   * edge (see use-feathered-image.ts). On an "ai-region" layer, there is
+   * no existing alpha mask to soften — the generated image normally fills
+   * its box opaquely — so it instead fades a SYNTHETIC alpha ramp in from
+   * the box's own four edges (see useFrameFeatheredImage in the same
+   * file), blending the generated image into whatever sits behind the
+   * region. 0/absent = hard edge (no feather) in both cases, max 64. */
   featherPx?: number;
+  /** ai-region layers only — the prompt last used to generate this
+   * region's image, kept with the layer (not just in transient component
+   * state) so reopening the banner still shows what was asked for and
+   * "Tạo lại" doesn't start from a blank textarea. Absent until the user
+   * has generated at least once. */
+  aiPrompt?: string;
   // text
   text?: string;
   fontFamily?: string;

@@ -21,4 +21,7 @@ export type AnalyticsEvent =
   | { name: "guideline_check_completed"; assetId: string; failCount: number; reviewCount: number }
   | { name: "export_succeeded"; assetId: string; format: string }
   | { name: "asset_downloaded"; assetId: string; assetType: string }
-  | { name: "asset_deleted"; assetId: string; assetType: string };
+  | { name: "asset_deleted"; assetId: string; assetType: string }
+  | { name: "voice_generation_started"; brandId: string; mode: "sync" | "async" }
+  | { name: "voice_generation_succeeded"; jobId: string; mode: "sync" | "async" }
+  | { name: "voice_generation_failed"; jobId: string; errorCode: string };

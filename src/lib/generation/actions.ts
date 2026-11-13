@@ -537,6 +537,65 @@ export async function getGenerationJobAction(jobId: string): Promise<GenerationJ
 }
 
 /**
+ * Dashboard's "Thử lại" on a failed job — deliberately a NEW generateImages()
+ * call with the failed job's own stored prompt/size/model, never a re-run
+ * of the same row. This matters for two reasons: (1) generateImages()
+ * already has its own idempotency guard (same user+brand+prompt+params,
+ * status queued/processing, within a short window) that naturally absorbs
+ * a double-click or a stray repeat poll of THIS retry itself, without any
+ * extra guard needed here; (2) it means the new job gets its own fresh
+ * attempts/status history instead of mutating a row that already has a
+ * final "failed" verdict recorded.
+ *
+ * Reconstructs the size as `exactSize` (the failed job's own recorded
+ * pixel width/height) regardless of whether the original request used a
+ * size preset, an aspect ratio, or exactSize — all three are just
+ * different ways of arriving at a width/height pair the job already
+ * persisted, so this never has to guess which one was used, only replay
+ * the pixel result. `singleModelOnly` is inferred from character_sheet_id
+ * being set (the one caller that always passes it, see
+ * character-actions.ts) since the flag itself isn't persisted on the row.
+ */
+export async function retryGenerationJob(jobId: string): Promise<ActionResult<{ jobId: string }>> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return err("UNAUTHORIZED", "Bạn cần đăng nhập");
+
+  const { data: job, error } = await supabase
+    .from("generation_jobs")
+    .select("brand_id, prompt, negative_prompt, params, requested_model, character_id, character_view, character_sheet_id")
+    .eq("id", jobId)
+    .maybeSingle();
+  if (error || !job) return err("NOT_FOUND", "Không tìm thấy tác vụ để thử lại.");
+
+  const result = await generateImages({
+    brandId: job.brand_id,
+    prompt: job.prompt,
+    negativePrompt: job.negative_prompt,
+    exactSize: { width: job.params.width, height: job.params.height },
+    count: job.params.count ?? 1,
+    model: job.requested_model ?? "auto",
+    singleModelOnly: Boolean(job.character_sheet_id),
+    presetId: job.params.presetId ?? undefined,
+    enhancePrompt: job.params.enhancePrompt ?? undefined,
+  });
+  if (!result.ok) return result;
+
+  if (job.character_id || job.character_sheet_id) {
+    const { error: linkError } = await supabase
+      .from("generation_jobs")
+      .update({ character_id: job.character_id, character_view: job.character_view, character_sheet_id: job.character_sheet_id })
+      .eq("id", result.data.jobId);
+    if (linkError) console.error("[retryGenerationJob] link character", linkError);
+  }
+
+  revalidatePath("/dashboard");
+  return result;
+}
+
+/**
  * Live Marketing Studio enhancement presets — fetched from Higgsfield's
  * own presets endpoint on every call (no local cache), never hardcoded:
  * the docs explicitly warn preset visibility changes over time, so a
