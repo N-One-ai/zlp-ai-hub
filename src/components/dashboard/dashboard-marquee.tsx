@@ -1,7 +1,7 @@
 "use client";
 
-import { Sparkle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ZMarkIcon } from "./z-mark-icon";
 import type { DashboardMarqueeFontSize, DashboardMarqueeTextStyle } from "@/types/dashboard";
 
 const REPEAT_COUNT = 16; // generous enough to overflow any realistic Dashboard width, so the 50%-translate loop never shows a gap
@@ -36,7 +36,7 @@ function Segment({
           >
             {text}
           </span>
-          <Sparkle className={cn("shrink-0 text-primary", iconClassName)} />
+          <ZMarkIcon className={cn("shrink-0 text-primary", iconClassName)} />
         </span>
       ))}
     </div>
