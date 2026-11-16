@@ -71,8 +71,15 @@ export function DashboardFeatureCardTile({
   const hasCta = Boolean(card.ctaLabel && card.ctaUrl);
   const internal = card.ctaUrl.startsWith("/") && !card.ctaUrl.startsWith("//");
 
+  // `@container` has to live on a WRAPPER, never on the same element as
+  // the `@sm:` classes that query it — a container can't query its own
+  // size (the nearest ancestor is looked up starting one level up), so
+  // `@sm:flex-row` would simply never match if it sat on the same node
+  // as `@container` itself. This is what silently collapsed the art
+  // strip's height to 0 at desktop widths before this fix (same root
+  // cause already fixed once for BannerSlideContent).
   const className = cn(
-    "@container group relative flex flex-1 flex-col @sm:flex-row overflow-hidden rounded-feature ring-1 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background transition-all",
+    "group relative flex size-full flex-col @sm:flex-row overflow-hidden rounded-feature ring-1 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background transition-all",
     bg.className
   );
 
@@ -99,19 +106,22 @@ export function DashboardFeatureCardTile({
     </>
   );
 
+  let inner: React.ReactNode;
   if (!interactive || !hasCta) {
-    return <div className={className}>{content}</div>;
-  }
-  if (internal) {
-    return (
+    inner = <div className={className}>{content}</div>;
+  } else if (internal) {
+    inner = (
       <Link href={card.ctaUrl} className={className}>
         {content}
       </Link>
     );
+  } else {
+    inner = (
+      <a href={card.ctaUrl} target="_blank" rel="noopener noreferrer" className={className}>
+        {content}
+      </a>
+    );
   }
-  return (
-    <a href={card.ctaUrl} target="_blank" rel="noopener noreferrer" className={className}>
-      {content}
-    </a>
-  );
+
+  return <div className="@container flex-1">{inner}</div>;
 }
