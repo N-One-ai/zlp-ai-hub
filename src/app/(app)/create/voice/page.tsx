@@ -1,11 +1,15 @@
 import { requireActiveWorkspace } from "@/lib/workspace/guards";
 import { getBrands } from "@/lib/brand/queries";
-import { getVbeeVoicesAction } from "@/lib/voice/actions";
+import { getVbeeVoicesAction, listVoiceGenerationJobsAction } from "@/lib/voice/actions";
 import { VoiceComposer } from "@/components/voice/voice-composer";
 
 export default async function CreateVoicePage() {
   const workspace = await requireActiveWorkspace();
-  const [brands, voices] = await Promise.all([getBrands(workspace.workspaceId), getVbeeVoicesAction()]);
+  const [brands, voices, history] = await Promise.all([
+    getBrands(workspace.workspaceId),
+    getVbeeVoicesAction(),
+    listVoiceGenerationJobsAction(),
+  ]);
   const activeBrands = brands.filter((b) => b.status === "active");
 
   const voicesResult = voices.ok
@@ -25,7 +29,7 @@ export default async function CreateVoicePage() {
           thương hiệu để lưu audio tạo ra vào thư viện.
         </p>
       ) : (
-        <VoiceComposer brands={activeBrands} voicesResult={voicesResult} />
+        <VoiceComposer brands={activeBrands} voicesResult={voicesResult} initialHistory={history} />
       )}
     </div>
   );

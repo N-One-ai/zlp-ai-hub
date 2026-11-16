@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Sparkles, Loader2, AlertTriangle, Download, Save, Check, Play, Pause, Volume2 } from "lucide-react";
+import { Sparkles, Loader2, AlertTriangle, Download, Save, Check, Play, Pause, Volume2, History } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -116,12 +116,29 @@ function VoiceAvatar({ voice, className }: { voice: VbeeVoice; className?: strin
 
 type PreviewState = "idle" | "loading" | "playing" | "error";
 
+function formatHistoryDate(iso: string): string {
+  return new Date(iso).toLocaleString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function statusLabel(status: VoiceGenerationJob["status"]): { text: string; className: string } {
+  switch (status) {
+    case "succeeded":
+      return { text: "Hoàn tất", className: "text-success" };
+    case "failed":
+      return { text: "Thất bại", className: "text-destructive" };
+    default:
+      return { text: "Đang xử lý", className: "text-muted-foreground" };
+  }
+}
+
 export function VoiceComposer({
   brands,
   voicesResult,
+  initialHistory,
 }: {
   brands: Brand[];
   voicesResult: { ok: true; voices: VbeeVoice[] } | { ok: false; code: string; message: string };
+  initialHistory: VoiceGenerationJob[];
 }) {
   const [brandId, setBrandId] = useState<string | null>(brands[0]?.id ?? null);
   const [text, setText] = useState("");
@@ -132,7 +149,43 @@ export function VoiceComposer({
   const [generating, setGenerating] = useState(false);
   const [job, setJob] = useState<VoiceGenerationJob | null>(null);
   const [saving, setSaving] = useState(false);
+  const [savingHistoryId, setSavingHistoryId] = useState<string | null>(null);
+  const [history, setHistory] = useState<VoiceGenerationJob[]>(initialHistory);
   const pollAttemptsRef = useRef(0);
+
+  // Keep the history list in sync with whatever the live job state becomes
+  // (new job created, async job completes via polling, etc.) — upsert by
+  // id so the same job never appears twice and newest-created stays
+  // first. Called at every site that would otherwise call setJob
+  // directly, instead of as a derived effect (avoids a setState-in-effect
+  // cascading render).
+  function applyJob(next: VoiceGenerationJob) {
+    setJob(next);
+    setHistory((prev) => {
+      const idx = prev.findIndex((h) => h.id === next.id);
+      if (idx === -1) return [next, ...prev];
+      const copy = [...prev];
+      copy[idx] = next;
+      return copy;
+    });
+  }
+
+  async function handleHistorySave(historyJob: VoiceGenerationJob) {
+    if (historyJob.status !== "succeeded" || savingHistoryId) return;
+    setSavingHistoryId(historyJob.id);
+    try {
+      const result = await saveVoiceAssetAction({ jobId: historyJob.id, name: historyJob.text.slice(0, 80) });
+      if (!result.ok) {
+        toast.error(result.error.message);
+        return;
+      }
+      setHistory((prev) => prev.map((h) => (h.id === historyJob.id ? { ...h, savedAssetId: result.data.assetId } : h)));
+      if (job?.id === historyJob.id) setJob({ ...historyJob, savedAssetId: result.data.assetId });
+      toast.success("Đã lưu vào thư viện.");
+    } finally {
+      setSavingHistoryId(null);
+    }
+  }
 
   const [previewState, setPreviewState] = useState<PreviewState>("idle");
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -162,7 +215,7 @@ export function VoiceComposer({
       pollAttemptsRef.current += 1;
       const next = await getVoiceGenerationStatusAction(job.id);
       if (cancelled) return;
-      if (next) setJob(next);
+      if (next) applyJob(next);
       if (pollAttemptsRef.current >= POLL_MAX_ATTEMPTS) clearInterval(interval);
     }, POLL_INTERVAL_MS);
     return () => {
@@ -315,7 +368,7 @@ export function VoiceComposer({
         return;
       }
       const fetched = await getVoiceGenerationStatusAction(result.data.jobId);
-      if (fetched) setJob(fetched);
+      if (fetched) applyJob(fetched);
     } finally {
       setGenerating(false);
     }
@@ -330,7 +383,7 @@ export function VoiceComposer({
         toast.error(result.error.message);
         return;
       }
-      setJob({ ...job, savedAssetId: result.data.assetId });
+      applyJob({ ...job, savedAssetId: result.data.assetId });
       toast.success("Đã lưu vào thư viện.");
     } finally {
       setSaving(false);
@@ -607,6 +660,80 @@ export function VoiceComposer({
           </CardContent>
         </Card>
       )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <History className="size-4" />
+            Danh sách voice đã tạo trước đó
+          </CardTitle>
+          <CardDescription>Tối đa 20 lượt tạo audio gần nhất của bạn trong workspace này.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {history.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Chưa có audio nào được tạo.</p>
+          ) : (
+            <ul className="flex flex-col gap-3">
+              {history.map((h) => {
+                const status = statusLabel(h.status);
+                return (
+                  <li key={h.id} className="flex flex-col gap-2 rounded-lg border border-border p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex flex-col gap-0.5 min-w-0">
+                        <p className="text-sm font-medium truncate">{h.text}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {h.voiceName} · {formatHistoryDate(h.createdAt)}
+                        </p>
+                      </div>
+                      <span className={`shrink-0 text-xs font-medium ${status.className}`}>{status.text}</span>
+                    </div>
+
+                    {h.status === "processing" && (
+                      <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <Loader2 className="size-3.5 animate-spin" />
+                        Đang xử lý...
+                      </p>
+                    )}
+
+                    {h.status === "failed" && <p className="text-xs text-destructive">{h.error || "Không rõ nguyên nhân."}</p>}
+
+                    {h.status === "succeeded" && h.audioUrl && (
+                      <div className="flex flex-col gap-2">
+                        <audio controls src={h.audioUrl} className="w-full h-9">
+                          <track kind="captions" />
+                        </audio>
+                        <div className="flex items-center gap-2">
+                          <Button type="button" variant="outline" size="sm" nativeButton={false} render={<a href={h.audioUrl} download />}>
+                            <Download className="size-3.5" />
+                            Tải xuống
+                          </Button>
+                          {h.savedAssetId ? (
+                            <span className="flex items-center gap-1 text-xs text-success">
+                              <Check className="size-3.5" />
+                              Đã lưu vào thư viện
+                            </span>
+                          ) : (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              disabled={savingHistoryId === h.id}
+                              onClick={() => handleHistorySave(h)}
+                            >
+                              {savingHistoryId === h.id ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}
+                              Lưu vào thư viện
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
