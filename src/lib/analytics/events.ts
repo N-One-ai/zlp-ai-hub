@@ -24,4 +24,6 @@ export type AnalyticsEvent =
   | { name: "asset_deleted"; assetId: string; assetType: string }
   | { name: "voice_generation_started"; brandId: string; mode: "sync" | "async" }
   | { name: "voice_generation_succeeded"; jobId: string; mode: "sync" | "async" }
-  | { name: "voice_generation_failed"; jobId: string; errorCode: string };
+  | { name: "voice_generation_failed"; jobId: string; errorCode: string }
+  | { name: "voice_generation_sync_fallback"; jobId: string; errorCode: string }
+  | { name: "voice_preview_sync_fallback"; errorCode: string };

@@ -7,7 +7,7 @@ import { getActiveWorkspace } from "@/lib/workspace/queries";
 import { trackEvent } from "@/lib/analytics/track";
 import { buildCreativeAssetPath, uploadGeneratedImage, extensionForContentType } from "@/lib/generation/storage";
 import { createVoiceGenerationSchema, saveVoiceAssetSchema, previewVoiceSampleSchema } from "./schema";
-import { getVoiceGenerationJob } from "./queries";
+import { getVoiceGenerationJob, listVoiceGenerationJobs } from "./queries";
 import {
   isVbeeConfigured,
   listVbeeVoices,
@@ -58,6 +58,14 @@ export async function getVbeeVoicesAction(): Promise<ActionResult<VbeeVoice[]>> 
     const message = e instanceof VbeeError ? e.message : GENERIC_ERROR;
     return err(e instanceof VbeeError ? e.code : "UNKNOWN", message);
   }
+}
+
+/** Previously-created voice jobs for the current user — used by the
+ * "/create/voice" page's history list. */
+export async function listVoiceGenerationJobsAction(): Promise<VoiceGenerationJob[]> {
+  const workspace = await getActiveWorkspace();
+  if (!workspace) return [];
+  return listVoiceGenerationJobs(workspace.workspaceId, 20);
 }
 
 function buildWebhookUrl(requestHeaders: Headers): string {
@@ -144,20 +152,45 @@ export async function createVoiceGenerationAction(rawInput: unknown): Promise<Ac
 
   try {
     if (mode === "sync") {
-      const { bytes, contentType } = await createVbeeSyncTts({
-        text: input.text,
-        voiceCode: input.voiceCode,
-        outputFormat: input.outputFormat,
-        bitrate: input.bitrate,
-        speed: input.speed,
-        sampleRate: input.sampleRate,
-      });
-      const path = buildCreativeAssetPath(workspace.workspaceId, input.brandId, extensionForContentType(contentType));
-      const { error: uploadError } = await uploadGeneratedImage(supabase, path, bytes, contentType);
-      if (uploadError) throw new Error(`Lưu file thất bại: ${uploadError.message}`);
+      try {
+        const { bytes, contentType } = await createVbeeSyncTts({
+          text: input.text,
+          voiceCode: input.voiceCode,
+          outputFormat: input.outputFormat,
+          bitrate: input.bitrate,
+          speed: input.speed,
+          sampleRate: input.sampleRate,
+        });
+        const path = buildCreativeAssetPath(workspace.workspaceId, input.brandId, extensionForContentType(contentType));
+        const { error: uploadError } = await uploadGeneratedImage(supabase, path, bytes, contentType);
+        if (uploadError) throw new Error(`Lưu file thất bại: ${uploadError.message}`);
 
-      await supabase.from("voice_generation_jobs").update({ status: "succeeded", storage_path: path }).eq("id", jobRow.id);
-      await trackEvent({ name: "voice_generation_succeeded", jobId: jobRow.id, mode });
+        await supabase.from("voice_generation_jobs").update({ status: "succeeded", storage_path: path }).eq("id", jobRow.id);
+        await trackEvent({ name: "voice_generation_succeeded", jobId: jobRow.id, mode });
+      } catch (syncError) {
+        // Realtime API rejected the request (e.g. "This feature is not
+        // supported in user package") — fall through to the already-
+        // working Batch API instead of dead-ending the job. Re-record the
+        // job's own mode as 'async' so getVoiceGenerationStatusAction (and
+        // the UI) poll it correctly from here on.
+        const syncCode = syncError instanceof VbeeError ? syncError.code : "UNKNOWN";
+        await trackEvent({ name: "voice_generation_sync_fallback", jobId: jobRow.id, errorCode: syncCode });
+
+        const webhookUrl = buildWebhookUrl(await headers());
+        const { requestId } = await createVbeeBatchTts({
+          text: input.text,
+          voiceCode: input.voiceCode,
+          outputFormat: input.outputFormat,
+          bitrate: input.bitrate,
+          speed: input.speed,
+          sampleRate: input.sampleRate,
+          webhookUrl,
+        });
+        await supabase
+          .from("voice_generation_jobs")
+          .update({ mode: "async", vbee_request_id: requestId })
+          .eq("id", jobRow.id);
+      }
     } else {
       const webhookUrl = buildWebhookUrl(await headers());
       const { requestId } = await createVbeeBatchTts({
@@ -331,9 +364,41 @@ export async function previewVoiceSampleAction(rawInput: unknown): Promise<Actio
       speed: 1.0,
     });
     return ok({ dataUrl: `data:${contentType};base64,${bytes.toString("base64")}` });
-  } catch (e) {
-    const message = e instanceof VbeeError ? e.message : e instanceof Error ? e.message : GENERIC_ERROR;
-    const code = e instanceof VbeeError ? e.code : "UNKNOWN";
-    return err(code, message);
+  } catch (syncError) {
+    // Same Realtime-API restriction as createVoiceGenerationAction can hit
+    // here too — fall through to the Batch API and poll it for a few
+    // seconds so "Nghe thử" still returns real audio instead of an error,
+    // without changing this action's external `{ dataUrl }` contract.
+    const syncCode = syncError instanceof VbeeError ? syncError.code : "UNKNOWN";
+    await trackEvent({ name: "voice_preview_sync_fallback", errorCode: syncCode });
+
+    try {
+      const webhookUrl = buildWebhookUrl(await headers());
+      const { requestId } = await createVbeeBatchTts({
+        text,
+        voiceCode,
+        outputFormat: "mp3",
+        bitrate: 64,
+        speed: 1.0,
+        webhookUrl,
+      });
+
+      const maxAttempts = 8;
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        const result = await getVbeeTtsRequest(requestId);
+        if (result.status === "PROCESSING" || result.status === "QUEUED") continue;
+        if (result.status === "COMPLETED" && result.audioLink) {
+          const { bytes, contentType } = await downloadVbeeAudio(result.audioLink, "mp3");
+          return ok({ dataUrl: `data:${contentType};base64,${bytes.toString("base64")}` });
+        }
+        return err("PREVIEW_FAILED", `Vbee báo trạng thái: ${result.status}`);
+      }
+      return err("PREVIEW_TIMEOUT", "Nghe thử đang xử lý quá lâu, vui lòng thử lại.");
+    } catch (asyncError) {
+      const message = asyncError instanceof VbeeError ? asyncError.message : asyncError instanceof Error ? asyncError.message : GENERIC_ERROR;
+      const code = asyncError instanceof VbeeError ? asyncError.code : "UNKNOWN";
+      return err(code, message);
+    }
   }
 }
