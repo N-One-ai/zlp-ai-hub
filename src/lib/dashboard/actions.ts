@@ -3,19 +3,28 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { ok, err, type ActionResult } from "@/lib/action-result";
-import { dashboardBannerInputSchema, reorderDashboardBannersSchema, type DashboardBannerInput } from "./schema";
+import {
+  dashboardBannerInputSchema,
+  dashboardFeatureCardInputSchema,
+  dashboardFeatureCardSlotSchema,
+  reorderDashboardBannersSchema,
+  type DashboardBannerInput,
+  type DashboardFeatureCardInput,
+} from "./schema";
 import {
   buildDashboardBannerPath,
+  buildDashboardFeatureCardPath,
   uploadDashboardBannerAsset,
   deleteDashboardBannerAsset,
   resolveDashboardBannerUrl,
   DASHBOARD_BANNER_MAX_BYTES,
   DASHBOARD_BANNER_ALLOWED_TYPES,
 } from "./storage";
+import { DASHBOARD_FEATURE_CARD_DEFAULTS } from "./feature-card-defaults";
 
 const GENERIC_ERROR = "Đã có lỗi xảy ra. Vui lòng thử lại.";
 
-function revalidateDashboardBanners() {
+function revalidateDashboard() {
   revalidatePath("/dashboard");
   revalidatePath("/dashboard-banners");
 }
@@ -139,7 +148,7 @@ export async function createDashboardBanner(
     return err("DB_ERROR", "Không thể tạo banner.");
   }
 
-  revalidateDashboardBanners();
+  revalidateDashboard();
   return ok({ id: data.id });
 }
 
@@ -174,7 +183,7 @@ export async function updateDashboardBanner(
     await deleteImageIfOrphaned(supabase, previousMobileImagePath, bannerId);
   }
 
-  revalidateDashboardBanners();
+  revalidateDashboard();
   return ok(null);
 }
 
@@ -236,7 +245,7 @@ export async function duplicateDashboardBanner(bannerId: string): Promise<Action
     return err("DB_ERROR", "Không thể nhân bản banner.");
   }
 
-  revalidateDashboardBanners();
+  revalidateDashboard();
   return ok({ id: data.id });
 }
 
@@ -253,7 +262,7 @@ export async function toggleDashboardBannerActive(bannerId: string, isActive: bo
   }
   if (!count) return err("FORBIDDEN", "Bạn không có quyền thực hiện thao tác này.");
 
-  revalidateDashboardBanners();
+  revalidateDashboard();
   return ok(null);
 }
 
@@ -276,7 +285,7 @@ export async function deleteDashboardBanner(
     await deleteImageIfOrphaned(supabase, mobileImagePath, null);
   }
 
-  revalidateDashboardBanners();
+  revalidateDashboard();
   return ok(null);
 }
 
@@ -304,6 +313,190 @@ export async function reorderDashboardBanners(orderedIds: string[]): Promise<Act
   }
   if (results.some((r) => !r.count)) return err("FORBIDDEN", "Bạn không có quyền thực hiện thao tác này.");
 
-  revalidateDashboardBanners();
+  revalidateDashboard();
+  return ok(null);
+}
+
+// ------------------------------------------------------------------ //
+// Dashboard feature cards ("Tạo ảnh" / "Tạo banner")                    //
+// ------------------------------------------------------------------ //
+
+function toFeatureCardContentRow(parsed: DashboardFeatureCardInput) {
+  return {
+    title: parsed.title,
+    description: parsed.description,
+    cta_label: parsed.ctaLabel,
+    cta_url: parsed.ctaUrl,
+    image_path: parsed.imagePath,
+    image_width: parsed.imageWidth,
+    image_height: parsed.imageHeight,
+    focal_x: parsed.focalX,
+    focal_y: parsed.focalY,
+    background_style: parsed.backgroundStyle,
+    is_active: parsed.isActive,
+  };
+}
+
+/** Reuses the SAME upload path/bucket machinery as the big banner — only
+ * the subfolder differs (buildDashboardFeatureCardPath) — and the SAME
+ * two-step "upload now, write the row on save" flow
+ * (discardDashboardBannerImage below already works for this slot's
+ * not-yet-saved upload too, since it just deletes by path). */
+export async function uploadDashboardFeatureCardImage(
+  workspaceId: string,
+  file: File
+): Promise<ActionResult<{ path: string; previewUrl: string | null }>> {
+  if (!DASHBOARD_BANNER_ALLOWED_TYPES.includes(file.type)) {
+    return err("VALIDATION_ERROR", "Định dạng không hỗ trợ. Dùng PNG, JPG hoặc WEBP.");
+  }
+  if (file.size > DASHBOARD_BANNER_MAX_BYTES) {
+    return err("VALIDATION_ERROR", "File quá lớn. Tối đa 5MB.");
+  }
+
+  const supabase = await createClient();
+  const path = buildDashboardFeatureCardPath(workspaceId, file.name || "feature-card");
+  const { error } = await uploadDashboardBannerAsset(supabase, path, file);
+
+  if (error) {
+    console.error("[uploadDashboardFeatureCardImage]", error);
+    return err("UPLOAD_ERROR", "Không thể tải lên. Bạn có quyền Admin trong workspace này không?");
+  }
+
+  const previewUrl = await resolveDashboardBannerUrl(supabase, path);
+  return ok({ path, previewUrl });
+}
+
+/** Admin-only (RLS), upserts the one row for this (workspace, slot) —
+ * there is never more than one, so this is both "create the first
+ * customization" and "edit it" depending on whether a row already
+ * exists. `previousImagePath` is only deleted when the admin actually
+ * replaced or removed the image in this edit; a feature-card image is
+ * never shared between rows (no "duplicate" action for these cards), so
+ * no orphan-check is needed before deleting it, unlike the big banner. */
+export async function updateDashboardFeatureCard(
+  workspaceId: string,
+  rawInput: unknown,
+  previousImagePath?: string | null
+): Promise<ActionResult<null>> {
+  const parsed = dashboardFeatureCardInputSchema.safeParse(rawInput);
+  if (!parsed.success) return err("VALIDATION_ERROR", parsed.error.issues[0]?.message ?? GENERIC_ERROR);
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return err("UNAUTHORIZED", "Bạn cần đăng nhập");
+
+  const { error } = await supabase.from("dashboard_feature_cards").upsert(
+    {
+      workspace_id: workspaceId,
+      slot: parsed.data.slot,
+      ...toFeatureCardContentRow(parsed.data),
+      created_by: user.id,
+    },
+    { onConflict: "workspace_id,slot" }
+  );
+
+  if (error) {
+    console.error("[updateDashboardFeatureCard]", error);
+    return err("DB_ERROR", "Không thể lưu thẻ chức năng. Bạn có quyền Admin trong workspace này không?");
+  }
+
+  if (previousImagePath && previousImagePath !== parsed.data.imagePath) {
+    await deleteDashboardBannerAsset(supabase, previousImagePath);
+  }
+
+  revalidateDashboard();
+  return ok(null);
+}
+
+/** Flips just `is_active`, preserving whatever content the slot already
+ * has — if it's never been customized yet, that means writing a row for
+ * the FIRST time using the built-in defaults (so an admin can hide a
+ * still-default card without being forced through the edit form first). */
+export async function toggleDashboardFeatureCardActive(
+  workspaceId: string,
+  rawSlot: unknown,
+  isActive: boolean
+): Promise<ActionResult<null>> {
+  const parsedSlot = dashboardFeatureCardSlotSchema.safeParse(rawSlot);
+  if (!parsedSlot.success) return err("VALIDATION_ERROR", GENERIC_ERROR);
+  const slot = parsedSlot.data;
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return err("UNAUTHORIZED", "Bạn cần đăng nhập");
+
+  const { data: existing } = await supabase
+    .from("dashboard_feature_cards")
+    .select("*")
+    .eq("workspace_id", workspaceId)
+    .eq("slot", slot)
+    .maybeSingle();
+
+  const defaults = DASHBOARD_FEATURE_CARD_DEFAULTS[slot];
+  const { error } = await supabase.from("dashboard_feature_cards").upsert(
+    {
+      workspace_id: workspaceId,
+      slot,
+      title: existing?.title ?? defaults.title,
+      description: existing?.description ?? defaults.description,
+      cta_label: existing?.cta_label ?? defaults.ctaLabel,
+      cta_url: existing?.cta_url ?? defaults.ctaUrl,
+      image_path: existing?.image_path ?? null,
+      image_width: existing?.image_width ?? null,
+      image_height: existing?.image_height ?? null,
+      focal_x: existing?.focal_x ?? 50,
+      focal_y: existing?.focal_y ?? 50,
+      background_style: existing?.background_style ?? defaults.backgroundStyle,
+      is_active: isActive,
+      created_by: existing?.created_by ?? user.id,
+    },
+    { onConflict: "workspace_id,slot" }
+  );
+
+  if (error) {
+    console.error("[toggleDashboardFeatureCardActive]", error);
+    return err("DB_ERROR", "Bạn có quyền Admin trong workspace này không?");
+  }
+
+  revalidateDashboard();
+  return ok(null);
+}
+
+/** "Khôi phục nội dung mặc định" — deletes the customization row
+ * entirely (and its image, if any) so the slot goes back to the exact
+ * built-in default, including re-activating it. */
+export async function resetDashboardFeatureCard(workspaceId: string, rawSlot: unknown): Promise<ActionResult<null>> {
+  const parsedSlot = dashboardFeatureCardSlotSchema.safeParse(rawSlot);
+  if (!parsedSlot.success) return err("VALIDATION_ERROR", GENERIC_ERROR);
+  const slot = parsedSlot.data;
+
+  const supabase = await createClient();
+  const { data: existing } = await supabase
+    .from("dashboard_feature_cards")
+    .select("image_path")
+    .eq("workspace_id", workspaceId)
+    .eq("slot", slot)
+    .maybeSingle();
+
+  const { error } = await supabase
+    .from("dashboard_feature_cards")
+    .delete()
+    .eq("workspace_id", workspaceId)
+    .eq("slot", slot);
+
+  if (error) {
+    console.error("[resetDashboardFeatureCard]", error);
+    return err("DB_ERROR", "Bạn có quyền Admin trong workspace này không?");
+  }
+
+  if (existing?.image_path) {
+    await deleteDashboardBannerAsset(supabase, existing.image_path);
+  }
+
+  revalidateDashboard();
   return ok(null);
 }

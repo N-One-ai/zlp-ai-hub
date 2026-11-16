@@ -77,6 +77,7 @@ export function BannerSlideContent({
   index = 0,
   total = 1,
   className,
+  fit = "fixed",
 }: {
   data: BannerSlideData;
   /** False marks a non-visible carousel slide for assistive tech — always
@@ -85,6 +86,14 @@ export function BannerSlideContent({
   index?: number;
   total?: number;
   className?: string;
+  /** "fixed" (default) — locks the slide to the declared 4:3/2:1 frame
+   * ratio, used by the admin form's live preview where there's no sibling
+   * column to match. "fill" — fills 100% of the parent's own height
+   * instead (the real Dashboard carousel, whose parent grid cell is
+   * height-stretched to match the "Tạo ảnh"/"Tạo banner" cards column —
+   * an own aspect-ratio would fight that stretch and desync the two
+   * columns' heights, which is exactly the bug this mode avoids). */
+  fit?: "fixed" | "fill";
 }) {
   const mobileUrl = data.mobileImageUrl ?? data.imageUrl;
   const mobileFocalX = data.mobileImageUrl ? data.mobileFocalX : data.focalX;
@@ -98,12 +107,13 @@ export function BannerSlideContent({
     // wide the browser window is. A plain `sm:` viewport breakpoint would
     // wrongly apply desktop sizing inside a narrow column (e.g. the form's
     // side-by-side preview) on a wide screen, overflowing the frame.
-    <div className="@container w-full shrink-0">
+    <div className={cn("@container w-full shrink-0", fit === "fill" && "h-full")}>
       <div
         className={cn(
-          "relative w-full overflow-hidden rounded-xl ring-1 ring-border bg-gradient-to-br from-primary/14 via-card to-primary/6",
-          DASHBOARD_BANNER_FRAME.mobile.aspectClass,
-          DASHBOARD_BANNER_FRAME.desktop.aspectClass,
+          "relative w-full overflow-hidden rounded-feature ring-1 ring-border bg-gradient-to-br from-primary/14 via-card to-primary/6",
+          fit === "fixed"
+            ? [DASHBOARD_BANNER_FRAME.mobile.aspectClass, DASHBOARD_BANNER_FRAME.desktop.aspectClass]
+            : "h-full",
           className
         )}
         role={total > 1 ? "group" : undefined}
@@ -127,7 +137,7 @@ export function BannerSlideContent({
           <span className="inline-flex w-fit items-center rounded-md bg-gradient-to-r from-primary to-accent px-2 py-0.5 text-[11px] font-bold text-primary-foreground">
             Creative Hub
           </span>
-          <h2 className="font-heading text-lg @sm:text-xl @xl:text-2xl font-bold tracking-tight text-balance line-clamp-2">
+          <h2 className="font-heading text-[30px] leading-tight font-bold tracking-tight text-balance line-clamp-3">
             {data.title || "Tiêu đề banner"}
           </h2>
           {data.description && (

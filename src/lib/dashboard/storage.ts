@@ -16,6 +16,14 @@ export function buildDashboardBannerPath(workspaceId: string, filename: string):
   return `${workspaceId}/_dashboard-banners/${crypto.randomUUID()}.${ext}`;
 }
 
+/** Same bucket/upload/delete/resolve helpers below as the big banner —
+ * only the subfolder differs, purely for tidy browsing in the Storage
+ * console, since RLS only checks the workspace_id segment either way. */
+export function buildDashboardFeatureCardPath(workspaceId: string, filename: string): string {
+  const ext = filename.includes(".") ? filename.split(".").pop() : "bin";
+  return `${workspaceId}/_dashboard-feature-cards/${crypto.randomUUID()}.${ext}`;
+}
+
 /** Fails closed (null) rather than guessing — a missing/expired banner
  * image renders as missing, never as a broken guess. Same reasoning as
  * lib/brand/storage.ts's resolveSignedUrl. */

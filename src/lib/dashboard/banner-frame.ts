@@ -42,6 +42,46 @@ export const DASHBOARD_BANNER_FRAME = {
 
 export type BannerFrameVariant = keyof typeof DASHBOARD_BANNER_FRAME;
 
+/** The two Dashboard feature cards ("Tạo ảnh"/"Tạo banner") show their
+ * custom image as a small side strip, not a full-bleed hero — a single
+ * square crop (object-cover + one focal point) reads acceptably whether
+ * that strip ends up wide-and-short (mobile) or narrow-and-tall
+ * (desktop), which is why this gets one frame instead of two. */
+export const DASHBOARD_FEATURE_CARD_FRAME = {
+  ratioLabel: "1:1",
+  widthRatio: 1,
+  heightRatio: 1,
+  recommendedWidth: 800,
+  recommendedHeight: 800,
+} as const;
+
+export interface ImageFrame {
+  ratioLabel: string;
+  widthRatio: number;
+  heightRatio: number;
+  recommendedWidth: number;
+  recommendedHeight: number;
+}
+
+/** Fixed, small set of background treatments for the feature cards,
+ * pulled from design tokens already used elsewhere in the app (never a
+ * free-form color picker) — "Màu nền... theo design system hiện tại". */
+export const DASHBOARD_FEATURE_CARD_BACKGROUNDS = {
+  primary: {
+    label: "Xanh chủ đạo (mặc định)",
+    className: "bg-gradient-to-br from-primary/20 via-primary/8 to-transparent ring-primary/25 hover:ring-primary/45",
+  },
+  accent: {
+    label: "Accent",
+    className: "bg-gradient-to-br from-accent/20 via-accent/8 to-transparent ring-accent/30 hover:ring-accent/50",
+  },
+  neutral: {
+    label: "Trung tính",
+    className: "bg-gradient-to-br from-card via-card to-transparent ring-border hover:ring-foreground/20",
+  },
+} as const;
+export type DashboardFeatureCardBackground = keyof typeof DASHBOARD_FEATURE_CARD_BACKGROUNDS;
+
 function gcd(a: number, b: number): number {
   return b === 0 ? a : gcd(b, a % b);
 }
@@ -65,15 +105,10 @@ export interface ImageFitWarning {
   message: string;
 }
 
-/** Checks an uploaded image's natural size against one frame variant —
+/** Checks an uploaded image's natural size against a target frame —
  * used right after upload to warn (never block) about a mismatch that
  * could crop out important content or look blurry when stretched. */
-export function checkImageFit(
-  width: number,
-  height: number,
-  variant: BannerFrameVariant
-): ImageFitWarning[] {
-  const frame = DASHBOARD_BANNER_FRAME[variant];
+export function checkImageFit(width: number, height: number, frame: ImageFrame): ImageFitWarning[] {
   const warnings: ImageFitWarning[] = [];
   const targetRatio = frame.widthRatio / frame.heightRatio;
   const actualRatio = width / height;

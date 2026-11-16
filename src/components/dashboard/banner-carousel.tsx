@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BannerSlideContent } from "./banner-slide";
 import type { DashboardBanner } from "@/types/dashboard";
@@ -51,7 +50,13 @@ export function BannerCarousel({ banners }: { banners: DashboardBanner[] }) {
   return (
     <div
       ref={containerRef}
-      className="relative"
+      // `h-full` is what lets this match the "Tạo ảnh"/"Tạo banner" column's
+      // height via the parent grid's `items-stretch` on `lg:` and up. Below
+      // `lg:` the grid collapses to a single column, so this has no taller
+      // sibling to stretch against — `min-h-72` is the floor that keeps it
+      // from collapsing to 0 there (same fallback value the original
+      // static/no-banner hero used).
+      className="relative h-full min-h-72 lg:min-h-0"
       role="region"
       aria-roledescription="carousel"
       aria-label="Banner nổi bật"
@@ -63,9 +68,9 @@ export function BannerCarousel({ banners }: { banners: DashboardBanner[] }) {
       }}
       onKeyDown={handleKeyDown}
     >
-      <div className="overflow-hidden rounded-xl ring-1 ring-border">
+      <div className="h-full overflow-hidden rounded-feature ring-1 ring-border">
         <div
-          className="flex w-full transition-transform duration-500 ease-out motion-reduce:transition-none"
+          className="flex h-full w-full transition-transform duration-500 ease-out motion-reduce:transition-none"
           style={{ transform: `translateX(-${index * 100}%)` }}
         >
           {banners.map((banner, i) => (
@@ -74,6 +79,7 @@ export function BannerCarousel({ banners }: { banners: DashboardBanner[] }) {
               active={i === index}
               index={i}
               total={total}
+              fit="fill"
               className="rounded-none ring-0"
               data={{
                 title: banner.title,
@@ -93,40 +99,21 @@ export function BannerCarousel({ banners }: { banners: DashboardBanner[] }) {
       </div>
 
       {total > 1 && (
-        <>
-          <button
-            type="button"
-            aria-label="Banner trước"
-            onClick={goPrev}
-            className="absolute left-2 top-1/2 z-20 flex size-8 -translate-y-1/2 items-center justify-center rounded-full bg-background/70 text-foreground ring-1 ring-border backdrop-blur-sm transition-colors hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <ChevronLeft className="size-4" />
-          </button>
-          <button
-            type="button"
-            aria-label="Banner tiếp theo"
-            onClick={goNext}
-            className="absolute right-2 top-1/2 z-20 flex size-8 -translate-y-1/2 items-center justify-center rounded-full bg-background/70 text-foreground ring-1 ring-border backdrop-blur-sm transition-colors hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <ChevronRight className="size-4" />
-          </button>
-
-          <div className="absolute bottom-3 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1.5">
-            {banners.map((banner, i) => (
-              <button
-                key={banner.id}
-                type="button"
-                aria-label={`Đến banner ${i + 1}`}
-                aria-current={i === index}
-                onClick={() => goTo(i)}
-                className={cn(
-                  "h-1.5 rounded-full transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  i === index ? "w-5 bg-primary" : "w-1.5 bg-foreground/25 hover:bg-foreground/40"
-                )}
-              />
-            ))}
-          </div>
-        </>
+        <div className="absolute bottom-3 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1.5">
+          {banners.map((banner, i) => (
+            <button
+              key={banner.id}
+              type="button"
+              aria-label={`Đến banner ${i + 1}`}
+              aria-current={i === index}
+              onClick={() => goTo(i)}
+              className={cn(
+                "h-1.5 rounded-full transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                i === index ? "w-5 bg-primary" : "w-1.5 bg-foreground/25 hover:bg-foreground/40"
+              )}
+            />
+          ))}
+        </div>
       )}
     </div>
   );

@@ -150,7 +150,7 @@ function BannerForm({
       if (dimensions) {
         setImageWidth(dimensions.width);
         setImageHeight(dimensions.height);
-        setImageWarnings(checkImageFit(dimensions.width, dimensions.height, "desktop"));
+        setImageWarnings(checkImageFit(dimensions.width, dimensions.height, DASHBOARD_BANNER_FRAME.desktop));
       } else {
         setImageWidth(null);
         setImageHeight(null);
@@ -203,7 +203,7 @@ function BannerForm({
       if (dimensions) {
         setMobileImageWidth(dimensions.width);
         setMobileImageHeight(dimensions.height);
-        setMobileImageWarnings(checkImageFit(dimensions.width, dimensions.height, "mobile"));
+        setMobileImageWarnings(checkImageFit(dimensions.width, dimensions.height, DASHBOARD_BANNER_FRAME.mobile));
       } else {
         setMobileImageWidth(null);
         setMobileImageHeight(null);

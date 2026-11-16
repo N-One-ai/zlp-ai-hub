@@ -649,6 +649,66 @@ export interface Database {
         };
         Relationships: [];
       };
+      dashboard_feature_cards: {
+        Row: {
+          id: string;
+          workspace_id: string;
+          slot: string;
+          title: string;
+          description: string;
+          cta_label: string;
+          cta_url: string;
+          image_path: string | null;
+          image_width: number | null;
+          image_height: number | null;
+          focal_x: number;
+          focal_y: number;
+          background_style: string;
+          is_active: boolean;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          workspace_id: string;
+          slot: string;
+          title: string;
+          description?: string;
+          cta_label?: string;
+          cta_url?: string;
+          image_path?: string | null;
+          image_width?: number | null;
+          image_height?: number | null;
+          focal_x?: number;
+          focal_y?: number;
+          background_style?: string;
+          is_active?: boolean;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          workspace_id?: string;
+          slot?: string;
+          title?: string;
+          description?: string;
+          cta_label?: string;
+          cta_url?: string;
+          image_path?: string | null;
+          image_width?: number | null;
+          image_height?: number | null;
+          focal_x?: number;
+          focal_y?: number;
+          background_style?: string;
+          is_active?: boolean;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {

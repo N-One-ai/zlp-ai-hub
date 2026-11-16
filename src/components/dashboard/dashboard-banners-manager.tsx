@@ -121,7 +121,8 @@ export function DashboardBannersManager({ workspaceId, banners }: { workspaceId:
         <div>
           <h1 className="font-heading text-2xl font-bold tracking-tight">Banner Dashboard</h1>
           <p className="text-sm text-muted-foreground">
-            Quản lý các banner luân phiên hiển thị trên Dashboard. Chỉ banner đang bật mới xuất hiện.
+            <span className="font-medium text-foreground">Banner lớn</span> — carousel ở cột trái Dashboard. Quản lý
+            các banner luân phiên hiển thị; chỉ banner đang bật mới xuất hiện.
           </p>
         </div>
         <Button onClick={openCreate}>
