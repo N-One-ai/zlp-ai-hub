@@ -2,16 +2,41 @@
 
 import { Sparkle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { DashboardMarqueeFontSize, DashboardMarqueeTextStyle } from "@/types/dashboard";
 
 const REPEAT_COUNT = 16; // generous enough to overflow any realistic Dashboard width, so the 50%-translate loop never shows a gap
 
-function Segment({ text }: { text: string }) {
+const FONT_SIZE_CLASSES: Record<DashboardMarqueeFontSize, { text: string; icon: string; padY: string }> = {
+  sm: { text: "text-sm", icon: "size-3.5", padY: "py-2.5" },
+  md: { text: "text-base", icon: "size-4", padY: "py-3" },
+  lg: { text: "text-lg", icon: "size-5", padY: "py-3.5" },
+};
+
+function Segment({
+  text,
+  textClassName,
+  iconClassName,
+  textStyle,
+}: {
+  text: string;
+  textClassName: string;
+  iconClassName: string;
+  textStyle: DashboardMarqueeTextStyle;
+}) {
   return (
     <div className="flex shrink-0 items-center gap-6 pr-6" aria-hidden="true">
       {Array.from({ length: REPEAT_COUNT }).map((_, i) => (
         <span key={i} className="flex shrink-0 items-center gap-6 whitespace-nowrap">
-          <span className="text-sm font-semibold tracking-wide text-muted-foreground uppercase">{text}</span>
-          <Sparkle className="size-3.5 shrink-0 text-primary" />
+          <span
+            className={cn(
+              "font-semibold tracking-wide uppercase",
+              textClassName,
+              textStyle === "stroke" ? "marquee-text-stroke" : "text-muted-foreground"
+            )}
+          >
+            {text}
+          </span>
+          <Sparkle className={cn("shrink-0 text-primary", iconClassName)} />
         </span>
       ))}
     </div>
@@ -32,19 +57,25 @@ function Segment({ text }: { text: string }) {
 export function DashboardMarquee({
   text,
   speedSeconds,
+  fontSize = "sm",
+  textStyle = "solid",
   className,
 }: {
   text: string;
   speedSeconds: number;
+  fontSize?: DashboardMarqueeFontSize;
+  textStyle?: DashboardMarqueeTextStyle;
   className?: string;
 }) {
+  const sizeClasses = FONT_SIZE_CLASSES[fontSize];
   return (
     <div
       tabIndex={0}
       role="group"
       aria-label={text}
       className={cn(
-        "group relative overflow-hidden rounded-feature py-2.5 ring-1 ring-border/60 outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "group relative overflow-hidden rounded-feature ring-1 ring-border/60 outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        sizeClasses.padY,
         className
       )}
     >
@@ -54,8 +85,8 @@ export function DashboardMarquee({
         className="animate-marquee flex w-max group-hover:[animation-play-state:paused] group-focus:[animation-play-state:paused]"
         style={{ "--marquee-duration": `${speedSeconds}s` } as React.CSSProperties}
       >
-        <Segment text={text} />
-        <Segment text={text} />
+        <Segment text={text} textClassName={sizeClasses.text} iconClassName={sizeClasses.icon} textStyle={textStyle} />
+        <Segment text={text} textClassName={sizeClasses.text} iconClassName={sizeClasses.icon} textStyle={textStyle} />
       </div>
     </div>
   );

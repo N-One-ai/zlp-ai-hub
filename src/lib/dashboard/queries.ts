@@ -1,7 +1,12 @@
 import { createClient } from "@/lib/supabase/server";
 import { resolveDashboardBannerUrl } from "./storage";
 import { DASHBOARD_FEATURE_CARD_DEFAULTS } from "./feature-card-defaults";
-import { DASHBOARD_MARQUEE_DEFAULT_TEXT, DASHBOARD_MARQUEE_DEFAULT_SPEED_SECONDS } from "./marquee-defaults";
+import {
+  DASHBOARD_MARQUEE_DEFAULT_TEXT,
+  DASHBOARD_MARQUEE_DEFAULT_SPEED_SECONDS,
+  DASHBOARD_MARQUEE_DEFAULT_FONT_SIZE,
+  DASHBOARD_MARQUEE_DEFAULT_TEXT_STYLE,
+} from "./marquee-defaults";
 import type { DashboardBanner, DashboardFeatureCard, DashboardFeatureCardSlot, DashboardMarquee } from "@/types/dashboard";
 import type { Database } from "@/types/database";
 
@@ -162,6 +167,8 @@ export async function getDashboardMarquee(workspaceId: string): Promise<Dashboar
     return {
       text: DASHBOARD_MARQUEE_DEFAULT_TEXT,
       speedSeconds: DASHBOARD_MARQUEE_DEFAULT_SPEED_SECONDS,
+      fontSize: DASHBOARD_MARQUEE_DEFAULT_FONT_SIZE,
+      textStyle: DASHBOARD_MARQUEE_DEFAULT_TEXT_STYLE,
       isActive: true,
       isCustomized: false,
     };
@@ -170,6 +177,8 @@ export async function getDashboardMarquee(workspaceId: string): Promise<Dashboar
   return {
     text: data.text || DASHBOARD_MARQUEE_DEFAULT_TEXT,
     speedSeconds: data.speed_seconds,
+    fontSize: (data.font_size as DashboardMarquee["fontSize"]) || DASHBOARD_MARQUEE_DEFAULT_FONT_SIZE,
+    textStyle: (data.text_style as DashboardMarquee["textStyle"]) || DASHBOARD_MARQUEE_DEFAULT_TEXT_STYLE,
     isActive: data.is_active,
     isCustomized: true,
   };

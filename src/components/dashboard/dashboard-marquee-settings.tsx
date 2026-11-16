@@ -12,11 +12,23 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { DashboardMarquee } from "@/components/dashboard/dashboard-marquee";
 import { updateDashboardMarquee } from "@/lib/dashboard/actions";
 import { dashboardMarqueeInputSchema } from "@/lib/dashboard/schema";
-import { DASHBOARD_MARQUEE_SPEED_PRESETS } from "@/lib/dashboard/marquee-defaults";
-import type { DashboardMarquee as DashboardMarqueeData } from "@/types/dashboard";
+import {
+  DASHBOARD_MARQUEE_SPEED_PRESETS,
+  DASHBOARD_MARQUEE_FONT_SIZE_PRESETS,
+  DASHBOARD_MARQUEE_TEXT_STYLE_PRESETS,
+} from "@/lib/dashboard/marquee-defaults";
+import type {
+  DashboardMarquee as DashboardMarqueeData,
+  DashboardMarqueeFontSize,
+  DashboardMarqueeTextStyle,
+} from "@/types/dashboard";
 
-function speedLabel(speedSeconds: number): string {
-  return DASHBOARD_MARQUEE_SPEED_PRESETS.find((p) => p.value === speedSeconds)?.label ?? `${speedSeconds}s/vòng`;
+function presetLabel<T extends string | number>(
+  presets: ReadonlyArray<{ value: T; label: string }>,
+  value: T,
+  fallback: string
+): string {
+  return presets.find((p) => p.value === value)?.label ?? fallback;
 }
 
 /**
@@ -32,13 +44,15 @@ export function DashboardMarqueeSettings({ workspaceId, marquee }: { workspaceId
 
   const [text, setText] = useState(marquee.text);
   const [speedSeconds, setSpeedSeconds] = useState(marquee.speedSeconds);
+  const [fontSize, setFontSize] = useState<DashboardMarqueeFontSize>(marquee.fontSize);
+  const [textStyle, setTextStyle] = useState<DashboardMarqueeTextStyle>(marquee.textStyle);
   const [isActive, setIsActive] = useState(marquee.isActive);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (isPending) return;
 
-    const rawInput = { text, speedSeconds, isActive };
+    const rawInput = { text, speedSeconds, fontSize, textStyle, isActive };
     const parsed = dashboardMarqueeInputSchema.safeParse(rawInput);
     if (!parsed.success) {
       setFieldError(parsed.error.issues[0]?.message);
@@ -73,12 +87,14 @@ export function DashboardMarqueeSettings({ workspaceId, marquee }: { workspaceId
           {fieldError && <p className="text-xs text-destructive">{fieldError}</p>}
         </div>
 
-        <div className="flex flex-wrap items-center gap-4">
+        <div className="flex flex-wrap items-end gap-4">
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="marquee-speed">Tốc độ chạy</Label>
             <Select value={String(speedSeconds)} onValueChange={(v) => setSpeedSeconds(Number(v))}>
               <SelectTrigger id="marquee-speed" className="w-44">
-                <SelectValue>{() => speedLabel(speedSeconds)}</SelectValue>
+                <SelectValue>
+                  {() => presetLabel(DASHBOARD_MARQUEE_SPEED_PRESETS, speedSeconds, `${speedSeconds}s/vòng`)}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {DASHBOARD_MARQUEE_SPEED_PRESETS.map((preset) => (
@@ -89,7 +105,40 @@ export function DashboardMarqueeSettings({ workspaceId, marquee }: { workspaceId
               </SelectContent>
             </Select>
           </div>
-          <label className="flex items-center gap-2 text-sm">
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="marquee-font-size">Kích thước chữ</Label>
+            <Select value={fontSize} onValueChange={(v) => setFontSize(v as DashboardMarqueeFontSize)}>
+              <SelectTrigger id="marquee-font-size" className="w-40">
+                <SelectValue>{() => presetLabel(DASHBOARD_MARQUEE_FONT_SIZE_PRESETS, fontSize, fontSize)}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {DASHBOARD_MARQUEE_FONT_SIZE_PRESETS.map((preset) => (
+                  <SelectItem key={preset.value} value={preset.value}>
+                    {preset.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="marquee-text-style">Kiểu chữ</Label>
+            <Select value={textStyle} onValueChange={(v) => setTextStyle(v as DashboardMarqueeTextStyle)}>
+              <SelectTrigger id="marquee-text-style" className="w-48">
+                <SelectValue>{() => presetLabel(DASHBOARD_MARQUEE_TEXT_STYLE_PRESETS, textStyle, textStyle)}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {DASHBOARD_MARQUEE_TEXT_STYLE_PRESETS.map((preset) => (
+                  <SelectItem key={preset.value} value={preset.value}>
+                    {preset.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <label className="flex items-center gap-2 pb-2 text-sm">
             <Checkbox checked={isActive} onCheckedChange={(c) => setIsActive(c === true)} />
             Đang bật (hiển thị trên Dashboard)
           </label>
@@ -97,7 +146,7 @@ export function DashboardMarqueeSettings({ workspaceId, marquee }: { workspaceId
 
         <div className="flex flex-col gap-1.5">
           <Label>Xem trước</Label>
-          <DashboardMarquee text={text || "..."} speedSeconds={speedSeconds} />
+          <DashboardMarquee text={text || "..."} speedSeconds={speedSeconds} fontSize={fontSize} textStyle={textStyle} />
         </div>
 
         <div>
