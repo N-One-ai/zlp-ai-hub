@@ -3,17 +3,31 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { ok, err, type ActionResult } from "@/lib/action-result";
-import { createBannerInputSchema, changeBannerBrandSchema, saveDesignDocumentSchema, exportDesignSchema } from "./schema";
+import {
+  createBannerInputSchema,
+  changeBannerBrandSchema,
+  saveDesignDocumentSchema,
+  createBannerSizeVariantSchema,
+  exportDesignSchema,
+} from "./schema";
 import { getActiveWorkspace } from "@/lib/workspace/queries";
-import { buildCreativeAssetPath, uploadGeneratedImage, extensionForContentType, resolveSignedAssetUrl } from "@/lib/generation/storage";
+import {
+  buildCreativeAssetPath,
+  uploadGeneratedImage,
+  extensionForContentType,
+  resolveSignedAssetUrl,
+} from "@/lib/generation/storage";
 import { downloadBrandAsset } from "@/lib/brand/storage";
 import { readImageDimensions } from "@/lib/generation/image-dimensions";
 import { getTemplates, getBrand, getCurrentGuideline } from "@/lib/brand/queries";
-import { getBrandImageAssets } from "./queries";
+import { getBrandImageAssets, getBrandElementAssets, getBannerFamily, getCurrentDesignDocument } from "./queries";
 import { getDefaultLogoBox } from "./logo-size";
+import { scaleLayersToSize } from "./resize";
+import { checkGuideline } from "./guideline-check";
 import { trackEvent } from "@/lib/analytics/track";
 import type { DesignLayer, SafeZone } from "@/types/database";
 import type { GuidelineVersion } from "@/types/brand";
+import type { GuidelineCheckResult } from "@/types/design";
 
 const GENERIC_ERROR = "Đã có lỗi xảy ra. Vui lòng thử lại.";
 let layerSeq = 0;
@@ -30,6 +44,9 @@ export async function getBrandTemplatesAction(brandId: string) {
 }
 export async function getBrandImageAssetsAction(brandId: string) {
   return getBrandImageAssets(brandId);
+}
+export async function getBrandElementAssetsAction(brandId: string) {
+  return getBrandElementAssets(brandId);
 }
 
 /**
@@ -180,6 +197,7 @@ export async function createBannerAsset(rawInput: unknown): Promise<ActionResult
       width: preset.width,
       height: preset.height,
       guideline_version_id: brand?.current_guideline_version_id ?? null,
+      size_preset_id: input.sizePresetId,
     })
     .select("id")
     .single();
@@ -272,7 +290,7 @@ export async function duplicateBannerAsset(assetId: string): Promise<ActionResul
 
   const { data: original } = await supabase
     .from("creative_assets")
-    .select("workspace_id, brand_id, guideline_version_id, current_design_document_id")
+    .select("workspace_id, brand_id, guideline_version_id, current_design_document_id, name")
     .eq("id", assetId)
     .maybeSingle();
   if (!original) return err("NOT_FOUND", "Không tìm thấy banner.");
@@ -282,6 +300,11 @@ export async function duplicateBannerAsset(assetId: string): Promise<ActionResul
     : { data: null };
   if (!sourceDoc) return err("NOT_FOUND", "Không tìm thấy bản thiết kế nguồn.");
 
+  // Keeps the original's name (PRD ask: "giữ tên... khi nhân bản") — never
+  // silently reset back to unnamed. A " (bản sao)" suffix makes the two
+  // distinguishable in the Library instead of showing two identical names.
+  const duplicateName = original.name ? `${original.name} (bản sao)` : "";
+
   const { data: newAsset, error: assetError } = await supabase
     .from("creative_assets")
     .insert({
@@ -289,10 +312,12 @@ export async function duplicateBannerAsset(assetId: string): Promise<ActionResul
       brand_id: original.brand_id,
       owner_id: user.id,
       type: "banner",
+      name: duplicateName,
       status: "draft",
       width: sourceDoc.width,
       height: sourceDoc.height,
       guideline_version_id: original.guideline_version_id,
+      size_preset_id: sourceDoc.size_preset_id,
     })
     .select("id")
     .single();
@@ -384,7 +409,7 @@ export async function saveDesignDocument(rawInput: unknown): Promise<ActionResul
 
   const { error: updateError, count } = await supabase
     .from("creative_assets")
-    .update({ current_design_document_id: doc.id }, { count: "exact" })
+    .update({ current_design_document_id: doc.id, size_preset_id: input.sizePresetId }, { count: "exact" })
     .eq("id", input.assetId);
 
   if (updateError || !count) {
@@ -470,4 +495,237 @@ export async function exportDesign(
   revalidatePath(`/create/banner/${input.assetId}`);
   revalidatePath("/library");
   return ok({ exportId: exportRow.id, url });
+}
+
+export async function getBannerFamilyAction(assetId: string) {
+  return getBannerFamily(assetId);
+}
+
+/** Thin wrapper so a Client Component can read another asset's CURRENT
+ * layers (e.g. the size-variants panel exporting a variant without
+ * opening its editor) without a direct Supabase query. */
+export async function getCurrentDesignDocumentAction(assetId: string) {
+  return getCurrentDesignDocument(assetId);
+}
+
+/**
+ * "Tạo phiên bản kích thước khác" — the whole feature reuses the SAME
+ * tables/history every other banner already has (see migration
+ * 0011_banner_size_variants.sql's own doc comment): a size variant is
+ * just another ordinary creative_assets row (type 'banner'), linked back
+ * to the root via `source_banner_id`. Re-running this for a (root,
+ * preset) pair that already has a variant UPDATES that variant with a
+ * NEW design_documents version (never overwritten in place, same
+ * principle as saveDesignDocument) instead of creating a duplicate asset
+ * — this is also exactly what "Tạo lại" a single variant calls.
+ *
+ * NEVER calls any AI generation provider — the new layout is derived
+ * purely by scaleLayersToSize() (pure geometry) from the SOURCE asset's
+ * own CURRENT layers, which already include whatever AI-generated image
+ * the user placed. The caller gets the scaled layers back so it can
+ * render + upload a thumbnail itself (see OffscreenBannerStage) without
+ * a second round trip to re-read them.
+ */
+export async function createBannerSizeVariantAction(rawInput: unknown): Promise<
+  ActionResult<{
+    assetId: string;
+    layers: DesignLayer[];
+    width: number;
+    height: number;
+    isNew: boolean;
+    warnings: GuidelineCheckResult[];
+  }>
+> {
+  const parsed = createBannerSizeVariantSchema.safeParse(rawInput);
+  if (!parsed.success) return err("VALIDATION_ERROR", parsed.error.issues[0]?.message ?? GENERIC_ERROR);
+  const { sourceAssetId, sizePresetId } = parsed.data;
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return err("UNAUTHORIZED", "Bạn cần đăng nhập");
+
+  const { data: sourceAsset } = await supabase
+    .from("creative_assets")
+    .select("workspace_id, brand_id, guideline_version_id, current_design_document_id, source_banner_id, name")
+    .eq("id", sourceAssetId)
+    .maybeSingle();
+  if (!sourceAsset) return err("NOT_FOUND", "Không tìm thấy banner.");
+
+  const rootId: string = sourceAsset.source_banner_id ?? sourceAssetId;
+  const rootAsset =
+    rootId === sourceAssetId
+      ? sourceAsset
+      : (
+          await supabase
+            .from("creative_assets")
+            .select("workspace_id, brand_id, guideline_version_id, current_design_document_id, source_banner_id, name")
+            .eq("id", rootId)
+            .maybeSingle()
+        ).data;
+  if (!rootAsset) return err("NOT_FOUND", "Không tìm thấy banner gốc.");
+
+  const [{ data: targetPreset }, { data: sourceDoc }, guideline] = await Promise.all([
+    supabase.from("size_presets").select("width, height, name").eq("id", sizePresetId).maybeSingle(),
+    sourceAsset.current_design_document_id
+      ? supabase
+          .from("design_documents")
+          .select("document, width, height, size_preset_id")
+          .eq("id", sourceAsset.current_design_document_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+    getCurrentGuideline(rootAsset.brand_id),
+  ]);
+  if (!targetPreset) return err("VALIDATION_ERROR", "Preset kích thước không hợp lệ.");
+  if (!sourceDoc) return err("NOT_FOUND", "Không tìm thấy bản thiết kế nguồn.");
+
+  // Already exactly this preset (the root itself, or the source being
+  // re-adapted to its own current size) — nothing to create, hand the
+  // caller the source's own id/layers back as-is.
+  if (sourceDoc.size_preset_id === sizePresetId) {
+    return ok({
+      assetId: sourceAssetId,
+      layers: sourceDoc.document.layers,
+      width: sourceDoc.width,
+      height: sourceDoc.height,
+      isNew: false,
+      warnings: [],
+    });
+  }
+
+  const scaledLayers = scaleLayersToSize(
+    sourceDoc.document.layers,
+    sourceDoc.width,
+    sourceDoc.height,
+    targetPreset.width,
+    targetPreset.height,
+    guideline?.safeZone
+  );
+  const warnings = checkGuideline(
+    scaledLayers,
+    targetPreset.width,
+    targetPreset.height,
+    targetPreset.width,
+    targetPreset.height,
+    guideline
+  ).filter((r) => r.severity !== "pass");
+
+  // A variant for this exact (root, preset) pair may already exist —
+  // from an earlier "Tạo phiên bản" run, or because the caller is re-
+  // adapting (the brief's own "Tạo lại một phiên bản đích") — in which
+  // case this UPDATES it with a new version rather than creating a
+  // second asset for the same preset.
+  const { data: existingVariant } = await supabase
+    .from("creative_assets")
+    .select("id, current_design_document_id")
+    .eq("source_banner_id", rootId)
+    .eq("size_preset_id", sizePresetId)
+    .maybeSingle();
+
+  let targetAssetId: string;
+  let isNew: boolean;
+  let prevVersion = 0;
+
+  if (existingVariant) {
+    targetAssetId = existingVariant.id;
+    isNew = false;
+    const { data: prevDoc } = existingVariant.current_design_document_id
+      ? await supabase.from("design_documents").select("version").eq("id", existingVariant.current_design_document_id).maybeSingle()
+      : { data: null };
+    prevVersion = prevDoc?.version ?? 0;
+  } else {
+    isNew = true;
+    const variantName = `${rootAsset.name || "Banner chưa đặt tên"} — ${targetPreset.name}`;
+    const { data: newAsset, error: assetError } = await supabase
+      .from("creative_assets")
+      .insert({
+        workspace_id: rootAsset.workspace_id,
+        brand_id: rootAsset.brand_id,
+        owner_id: user.id,
+        type: "banner",
+        name: variantName,
+        status: "draft",
+        width: targetPreset.width,
+        height: targetPreset.height,
+        guideline_version_id: rootAsset.guideline_version_id,
+        source_banner_id: rootId,
+        size_preset_id: sizePresetId,
+      })
+      .select("id")
+      .single();
+    if (assetError || !newAsset) {
+      console.error("[createBannerSizeVariantAction] asset", assetError);
+      return err("DB_ERROR", "Không thể tạo phiên bản.");
+    }
+    targetAssetId = newAsset.id;
+  }
+
+  const { data: newDoc, error: docError } = await supabase
+    .from("design_documents")
+    .insert({
+      asset_id: targetAssetId,
+      version: prevVersion + 1,
+      size_preset_id: sizePresetId,
+      width: targetPreset.width,
+      height: targetPreset.height,
+      document: { layers: scaledLayers },
+      guideline_version_id: rootAsset.guideline_version_id,
+      created_by: user.id,
+    })
+    .select("id")
+    .single();
+  if (docError || !newDoc) {
+    console.error("[createBannerSizeVariantAction] document", docError);
+    if (isNew) await supabase.from("creative_assets").delete().eq("id", targetAssetId);
+    return err("DB_ERROR", "Không thể tạo bản thiết kế cho phiên bản.");
+  }
+
+  await supabase
+    .from("creative_assets")
+    .update({ current_design_document_id: newDoc.id, size_preset_id: sizePresetId })
+    .eq("id", targetAssetId);
+
+  revalidatePath("/library");
+  revalidatePath(`/create/banner/${rootId}`);
+  revalidatePath(`/create/banner/${targetAssetId}`);
+  return ok({ assetId: targetAssetId, layers: scaledLayers, width: targetPreset.width, height: targetPreset.height, isNew, warnings });
+}
+
+/** Uploads a small representative render of a banner's CURRENT layout for
+ * the size-variants list's thumbnails — rendered client-side via the
+ * SAME Konva Stage.toDataURL() the real Export button already uses (see
+ * OffscreenBannerStage), never a server-side render, never an extra AI
+ * call. Purely cosmetic (list display only); never read by export or by
+ * guideline checks. */
+export async function setBannerThumbnailAction(assetId: string, file: File): Promise<ActionResult<{ path: string }>> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return err("UNAUTHORIZED", "Bạn cần đăng nhập");
+
+  const { data: asset } = await supabase.from("creative_assets").select("workspace_id, brand_id, thumbnail_path").eq("id", assetId).maybeSingle();
+  if (!asset) return err("NOT_FOUND", "Không tìm thấy banner.");
+
+  const path = buildCreativeAssetPath(asset.workspace_id, asset.brand_id, extensionForContentType(file.type));
+  const bytes = Buffer.from(await file.arrayBuffer());
+  const { error: uploadError } = await uploadGeneratedImage(supabase, path, bytes, file.type);
+  if (uploadError) {
+    console.error("[setBannerThumbnailAction] upload", uploadError);
+    return err("UPLOAD_ERROR", "Không thể lưu ảnh xem trước.");
+  }
+
+  const previousPath = asset.thumbnail_path;
+  const { error: updateError, count } = await supabase
+    .from("creative_assets")
+    .update({ thumbnail_path: path }, { count: "exact" })
+    .eq("id", assetId);
+  if (updateError || !count) {
+    await supabase.storage.from("creative-assets").remove([path]);
+    return err("FORBIDDEN", "Bạn không có quyền cập nhật banner này.");
+  }
+  if (previousPath) await supabase.storage.from("creative-assets").remove([previousPath]);
+
+  return ok({ path });
 }

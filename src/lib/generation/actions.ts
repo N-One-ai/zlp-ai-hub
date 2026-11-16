@@ -95,10 +95,12 @@ export async function generateImages(rawInput: unknown): Promise<ActionResult<{ 
   const input = parsed.data;
 
   // Per-model prompt length — the schema above only enforces the highest
-  // confirmed ceiling across all models (32000, OpenAI); the model that
-  // will actually be tried first may support much less (e.g. 1000 for
-  // Gemini/Higgsfield/Demo). Checked before any DB write so an over-limit
-  // prompt never creates a job row at all.
+  // confirmed ceiling across all models (32000, OpenAI); kept as its own
+  // check here (rather than relying on the schema alone) because a FUTURE
+  // model added to model-meta.ts/providers/*.ts might support less than
+  // 32000, and the error below should always name whichever model is
+  // actually first in the chain. Checked before any DB write so an
+  // over-limit prompt never creates a job row at all.
   const chain = (() => {
     const resolved = resolveModelChain(input.model);
     const bounded = resolved.length > 0 ? resolved : ["demo"]; // only reached when zero real models are configured at all
@@ -400,7 +402,7 @@ const UPLOAD_ALLOWED_TYPES = ["image/png", "image/jpeg", "image/webp"];
 export async function uploadImageAsset(
   brandId: string,
   file: File,
-  options?: { prompt?: string; sourceGenerationJobId?: string }
+  options?: { prompt?: string; sourceGenerationJobId?: string; tags?: string[] }
 ): Promise<ActionResult<{ assetId: string; path: string; width: number | null; height: number | null }>> {
   if (!UPLOAD_ALLOWED_TYPES.includes(file.type)) {
     return err("VALIDATION_ERROR", "Định dạng không hỗ trợ. Dùng PNG, JPG hoặc WEBP.");
@@ -452,6 +454,7 @@ export async function uploadImageAsset(
       prompt: options?.prompt ?? null,
       source_generation_job_id: options?.sourceGenerationJobId ?? null,
       guideline_version_id: brand?.current_guideline_version_id ?? null,
+      tags: options?.tags ?? [],
     })
     .select("id")
     .single();
@@ -473,7 +476,7 @@ export async function uploadImageAsset(
  * viện). Returns a short-lived signed URL, same 1h TTL convention as
  * every other signed URL in this app; the caller must re-request if the
  * composer sits open long enough for it to expire. */
-export async function uploadReferenceImage(file: File): Promise<ActionResult<{ url: string }>> {
+export async function uploadReferenceImage(file: File): Promise<ActionResult<{ url: string; path: string }>> {
   if (!UPLOAD_ALLOWED_TYPES.includes(file.type)) {
     return err("VALIDATION_ERROR", "Định dạng không hỗ trợ. Dùng PNG, JPG hoặc WEBP.");
   }
@@ -501,15 +504,19 @@ export async function uploadReferenceImage(file: File): Promise<ActionResult<{ u
   const url = await resolveSignedAssetUrl(supabase, path);
   if (!url) return err("UPLOAD_ERROR", "Không thể tạo đường dẫn cho ảnh tham chiếu.");
 
-  return ok({ url });
+  return ok({ url, path });
 }
 
 /** Resolves an EXISTING library image asset to a fresh signed URL, for
  * the "@ Elements" picker — lets the user reuse one of their own past
  * images as a reference without re-uploading it. Only ever resolves
  * assets the caller can already see (RLS-scoped select), never an
- * arbitrary path. */
-export async function resolveAssetAsReference(assetId: string): Promise<ActionResult<{ url: string }>> {
+ * arbitrary path. Also returns the asset's own STABLE storage_path (not
+ * just the short-lived signed URL) — callers that need to persist which
+ * reference was picked (e.g. the banner editor's "Vùng tạo ảnh AI" panel)
+ * save that path, never the signed URL, same convention as every other
+ * image reference in this app. */
+export async function resolveAssetAsReference(assetId: string): Promise<ActionResult<{ url: string; path: string }>> {
   const supabase = await createClient();
   const {
     data: { user },
@@ -526,7 +533,7 @@ export async function resolveAssetAsReference(assetId: string): Promise<ActionRe
   const url = await resolveSignedAssetUrl(supabase, asset.storage_path);
   if (!url) return err("UPLOAD_ERROR", "Không thể tạo đường dẫn cho tài sản này.");
 
-  return ok({ url });
+  return ok({ url, path: asset.storage_path });
 }
 
 /** Thin "use server" wrapper so the job-status poller (a Client

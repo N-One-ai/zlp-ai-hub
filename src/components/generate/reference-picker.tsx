@@ -11,6 +11,14 @@ import type { LibraryAssetListItem } from "@/types/library";
 export interface ReferenceImage {
   url: string;
   label: string;
+  /** Stable Storage path behind this reference, when known — present for
+   * both an uploaded file and an "@ Elements" pick (both now return it),
+   * absent only if a caller somehow constructs a ReferenceImage by hand.
+   * Callers that need this reference to survive beyond the current signed
+   * URL's lifetime (e.g. persisting it on a layer) use this instead of
+   * `url`; callers that only send it straight to generateImages() in the
+   * same request never need it. */
+  path?: string;
 }
 
 const UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
@@ -75,7 +83,7 @@ export function ReferencePicker({
         toast.error(result.error.message);
         return;
       }
-      addOrReplace({ url: result.data.url, label: file.name });
+      addOrReplace({ url: result.data.url, label: file.name, path: result.data.path });
     } finally {
       setUploading(false);
     }
@@ -88,7 +96,7 @@ export function ReferencePicker({
       toast.error(result.error.message);
       return;
     }
-    addOrReplace({ url: result.data.url, label: asset.name || "Tài sản" });
+    addOrReplace({ url: result.data.url, label: asset.name || "Tài sản", path: result.data.path });
   }
 
   return (

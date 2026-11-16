@@ -94,9 +94,9 @@ function LayerNode({
     return <Rect {...common} width={layer.width} height={layer.height} fill={layer.fill ?? "#cccccc"} />;
   }
 
-  // background / image / logo — all render as an image if loaded, else a
-  // neutral placeholder rect so an empty background/logo slot is still
-  // visible and selectable.
+  // background / image / logo / element — all render as an image if
+  // loaded, else a neutral placeholder rect so an empty background/logo
+  // slot is still visible and selectable.
   if (image) {
     // The background layer's destination box is whatever the current
     // size preset is — it must never stretch the source image to fit a
@@ -174,12 +174,13 @@ export function EditorCanvas({
     if (!transformer) return;
     const node = selectedId ? nodeRefs.current.get(selectedId) : null;
     transformer.nodes(node ? [node] : []);
-    // The logo must never come out stretched, including from a manual
-    // drag-resize: lock it to corner anchors only and force
-    // scaleX === scaleY (keepRatio), so independently resizing just the
-    // width or just the height is not possible for this layer type.
+    // The logo (and a decorative "element" placed from the library) must
+    // never come out stretched, including from a manual drag-resize: lock
+    // it to corner anchors only and force scaleX === scaleY (keepRatio),
+    // so independently resizing just the width or just the height is not
+    // possible for these layer types.
     const layer = selectedId ? layers.find((l) => l.id === selectedId) : null;
-    if (layer?.type === "logo") {
+    if (layer?.type === "logo" || layer?.type === "element") {
       transformer.keepRatio(true);
       transformer.enabledAnchors(["top-left", "top-right", "bottom-left", "bottom-right"]);
     } else {

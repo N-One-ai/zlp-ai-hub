@@ -3,6 +3,7 @@ import Link from "next/link";
 import { requireActiveWorkspace } from "@/lib/workspace/guards";
 import { getBannerAsset, getCurrentDesignDocument } from "@/lib/design/queries";
 import { getCurrentGuideline, getBrand, getBrands, getSizePreset, getSizePresets } from "@/lib/brand/queries";
+import { getLibraryAssets } from "@/lib/library/queries";
 import { listAvailableModels } from "@/lib/generation/providers";
 import { EditorShell } from "@/components/editor/editor-shell";
 
@@ -13,12 +14,13 @@ export default async function BannerEditorPage({ params }: { params: Promise<{ a
   const asset = await getBannerAsset(assetId);
   if (!asset || asset.workspaceId !== workspace.workspaceId) notFound();
 
-  const [document, guideline, brand, presets, brands] = await Promise.all([
+  const [document, guideline, brand, presets, brands, referenceAssetsPage] = await Promise.all([
     getCurrentDesignDocument(assetId),
     getCurrentGuideline(asset.brandId),
     getBrand(asset.brandId),
     getSizePresets(workspace.workspaceId),
     getBrands(workspace.workspaceId),
+    getLibraryAssets(workspace.workspaceId, { type: "image", page: 1 }),
   ]);
   if (!document) notFound();
 
@@ -34,11 +36,10 @@ export default async function BannerEditorPage({ params }: { params: Promise<{ a
   }));
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-3">
       <Link href="/library" className="text-sm text-muted-foreground hover:text-foreground w-fit">
         ← Thư viện
       </Link>
-      <h1 className="font-heading text-xl font-bold tracking-tight">{asset.name || "Banner chưa đặt tên"}</h1>
 
       <EditorShell
         assetId={asset.id}
@@ -57,6 +58,7 @@ export default async function BannerEditorPage({ params }: { params: Promise<{ a
         presets={presets}
         guideline={guideline}
         models={models}
+        referenceAssets={referenceAssetsPage.assets}
       />
     </div>
   );
