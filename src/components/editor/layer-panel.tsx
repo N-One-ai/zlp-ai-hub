@@ -1,6 +1,6 @@
 "use client";
 
-import { Image as ImageIcon, Type, Shapes, SquareDashed, Lock, Unlock, Trash2, ChevronUp, ChevronDown, Eye, EyeOff } from "lucide-react";
+import { Image as ImageIcon, Type, Shapes, SquareDashed, Sticker, Lock, Unlock, Trash2, ChevronUp, ChevronDown, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { ResolvedLayer } from "@/types/design";
@@ -12,6 +12,7 @@ const LAYER_ICON = {
   text: Type,
   shape: Shapes,
   "ai-region": SquareDashed,
+  element: Sticker,
 } as const;
 const LAYER_LABEL: Record<ResolvedLayer["type"], string> = {
   background: "Nền",
@@ -20,6 +21,7 @@ const LAYER_LABEL: Record<ResolvedLayer["type"], string> = {
   text: "Chữ",
   shape: "Hình khối",
   "ai-region": "Vùng tạo ảnh AI",
+  element: "Element",
 };
 
 export function LayerPanel({

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Building2, ChevronRight, Palette, Users } from "lucide-react";
+import { Building2, ChevronRight, Palette, Users, GalleryHorizontal } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -109,6 +109,19 @@ export default async function SettingsPage() {
                 <span className="block text-xs text-muted-foreground">
                   {activeMemberCount !== null ? `${activeMemberCount} thành viên` : "Quản lý thành viên"}
                 </span>
+              </span>
+              <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+            </Link>
+            <Link
+              href="/dashboard-banners"
+              className="flex items-center gap-3 rounded-lg border border-border px-3.5 py-3 transition-colors hover:bg-accent"
+            >
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-icon bg-muted">
+                <GalleryHorizontal className="size-4 text-muted-foreground" />
+              </span>
+              <span className="flex-1 min-w-0">
+                <span className="block text-sm font-medium">Banner Dashboard</span>
+                <span className="block text-xs text-muted-foreground">Quản lý carousel banner</span>
               </span>
               <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
             </Link>

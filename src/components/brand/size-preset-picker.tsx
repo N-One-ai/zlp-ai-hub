@@ -11,7 +11,7 @@ function gcd(a: number, b: number): number {
  * fraction is too large to read at a glance (an odd pixel size with no
  * clean common divisor), since a ratio like "137:91" doesn't actually
  * help anyone scan the list faster than the pixel size alone does. */
-function aspectRatioLabel(width: number, height: number): string | null {
+export function aspectRatioLabel(width: number, height: number): string | null {
   const divisor = gcd(width, height) || 1;
   const w = width / divisor;
   const h = height / divisor;

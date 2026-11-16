@@ -330,7 +330,7 @@ export function AiImagePanel({
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               placeholder="Ví dụ: một hộp sản phẩm màu trắng, chụp studio, trên nền trắng trơn..."
-              rows={3}
+              rows={4}
               maxLength={maxPromptLength}
               aria-invalid={promptOverLimit}
               disabled={busy}

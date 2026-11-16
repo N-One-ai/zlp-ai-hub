@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BrandPicker } from "@/components/brand/brand-picker";
-import { SizePresetPicker } from "@/components/brand/size-preset-picker";
+import { SizePresetCards } from "@/components/brand/size-preset-cards";
 import { ModelPicker } from "@/components/generate/model-picker";
 import { progressLabel } from "@/components/generate/job-status";
 import { CharCounter } from "@/components/generate/char-counter";
@@ -246,15 +246,13 @@ export function BannerSetupForm({
           }
         />
         <CardContent className="flex flex-col gap-3">
-          <div className="grid sm:grid-cols-2 gap-3">
-            <div className="flex flex-col gap-1.5">
-              <Label>Thương hiệu</Label>
-              <BrandPicker brands={brands} value={brandId} onChange={setBrandId} />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label>Kích thước</Label>
-              <SizePresetPicker presets={presets} value={sizePresetId} onChange={setSizePresetId} />
-            </div>
+          <div className="flex flex-col gap-1.5">
+            <Label>Thương hiệu</Label>
+            <BrandPicker brands={brands} value={brandId} onChange={setBrandId} />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label>Kích thước</Label>
+            <SizePresetCards presets={presets} value={sizePresetId} onChange={setSizePresetId} />
           </div>
 
           {templates.length > 0 && (
@@ -385,7 +383,7 @@ export function BannerSetupForm({
                   value={aiPrompt}
                   onChange={(e) => setAiPrompt(e.target.value)}
                   placeholder="Mô tả ảnh nền muốn tạo, ví dụ: nền trừu tượng màu xanh dương, phong cách tối giản..."
-                  rows={2}
+                  rows={4}
                   maxLength={aiMaxPromptLength}
                   aria-invalid={aiPromptOverLimit}
                   disabled={aiGenerating}

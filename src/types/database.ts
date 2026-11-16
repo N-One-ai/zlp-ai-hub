@@ -437,6 +437,20 @@ export interface Database {
           source_generation_job_id: string | null;
           guideline_version_id: string | null;
           current_design_document_id: string | null;
+          /** Set only on a size VARIANT — points at the "main"/original
+           * banner it was adapted from (see "Tạo phiên bản kích thước
+           * khác"). Null on the original itself and on every other asset
+           * type. */
+          source_banner_id: string | null;
+          /** The size_presets row this banner (original or variant)
+           * currently targets — null only for a banner created before
+           * this column existed and never re-saved since. */
+          size_preset_id: string | null;
+          /** Storage path of a small representative raster render of
+           * this banner's current layout — used ONLY for the size-
+           * variants list's thumbnails, never trusted as the actual
+           * exported deliverable (see exports table for that). */
+          thumbnail_path: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -457,6 +471,9 @@ export interface Database {
           source_generation_job_id?: string | null;
           guideline_version_id?: string | null;
           current_design_document_id?: string | null;
+          source_banner_id?: string | null;
+          size_preset_id?: string | null;
+          thumbnail_path?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -477,6 +494,9 @@ export interface Database {
           source_generation_job_id?: string | null;
           guideline_version_id?: string | null;
           current_design_document_id?: string | null;
+          source_banner_id?: string | null;
+          size_preset_id?: string | null;
+          thumbnail_path?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -554,6 +574,138 @@ export interface Database {
           storage_path?: string;
           created_by?: string | null;
           created_at?: string;
+        };
+        Relationships: [];
+      };
+      dashboard_banners: {
+        Row: {
+          id: string;
+          workspace_id: string;
+          title: string;
+          description: string;
+          cta_label: string;
+          cta_url: string;
+          image_path: string;
+          image_width: number | null;
+          image_height: number | null;
+          focal_x: number;
+          focal_y: number;
+          mobile_image_path: string | null;
+          mobile_image_width: number | null;
+          mobile_image_height: number | null;
+          mobile_focal_x: number;
+          mobile_focal_y: number;
+          sort_order: number;
+          is_active: boolean;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          workspace_id: string;
+          title: string;
+          description?: string;
+          cta_label?: string;
+          cta_url?: string;
+          image_path: string;
+          image_width?: number | null;
+          image_height?: number | null;
+          focal_x?: number;
+          focal_y?: number;
+          mobile_image_path?: string | null;
+          mobile_image_width?: number | null;
+          mobile_image_height?: number | null;
+          mobile_focal_x?: number;
+          mobile_focal_y?: number;
+          sort_order?: number;
+          is_active?: boolean;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          workspace_id?: string;
+          title?: string;
+          description?: string;
+          cta_label?: string;
+          cta_url?: string;
+          image_path?: string;
+          image_width?: number | null;
+          image_height?: number | null;
+          focal_x?: number;
+          focal_y?: number;
+          mobile_image_path?: string | null;
+          mobile_image_width?: number | null;
+          mobile_image_height?: number | null;
+          mobile_focal_x?: number;
+          mobile_focal_y?: number;
+          sort_order?: number;
+          is_active?: boolean;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      dashboard_feature_cards: {
+        Row: {
+          id: string;
+          workspace_id: string;
+          slot: string;
+          title: string;
+          description: string;
+          cta_label: string;
+          cta_url: string;
+          image_path: string | null;
+          image_width: number | null;
+          image_height: number | null;
+          focal_x: number;
+          focal_y: number;
+          background_style: string;
+          is_active: boolean;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          workspace_id: string;
+          slot: string;
+          title: string;
+          description?: string;
+          cta_label?: string;
+          cta_url?: string;
+          image_path?: string | null;
+          image_width?: number | null;
+          image_height?: number | null;
+          focal_x?: number;
+          focal_y?: number;
+          background_style?: string;
+          is_active?: boolean;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          workspace_id?: string;
+          slot?: string;
+          title?: string;
+          description?: string;
+          cta_label?: string;
+          cta_url?: string;
+          image_path?: string | null;
+          image_width?: number | null;
+          image_height?: number | null;
+          focal_x?: number;
+          focal_y?: number;
+          background_style?: string;
+          is_active?: boolean;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
         };
         Relationships: [];
       };
@@ -731,7 +883,7 @@ export interface GenerationAttempt {
 export type CreativeAssetType = "image" | "banner" | "video" | "audio";
 export type CreativeAssetStatus = "draft" | "ready" | "archived";
 
-export type DesignLayerType = "background" | "image" | "text" | "logo" | "shape" | "ai-region";
+export type DesignLayerType = "background" | "image" | "text" | "logo" | "shape" | "ai-region" | "element";
 export type TextAlign = "left" | "center" | "right";
 export type ShapeKind = "rect" | "ellipse";
 
@@ -759,7 +911,7 @@ export interface DesignLayer {
    * of guessing from id or position. Absent for any other text layer
    * (e.g. ones added via the generic "Thêm chữ" tool). */
   role?: "tagline" | "subtitle";
-  // image / background / logo
+  // image / background / logo / element
   imagePath?: string;
   /** "Cover fit" focal point (0..1, default 0.5/0.5 = centered) — how the
    * source image's natural aspect ratio is cropped to fill this layer's
@@ -787,6 +939,24 @@ export interface DesignLayer {
    * "Tạo lại" doesn't start from a blank textarea. Absent until the user
    * has generated at least once. */
   aiPrompt?: string;
+  /** ai-region layers only — STABLE Storage paths for the Reference
+   * image(s) attached to this region's last generation request (never a
+   * short-lived signed URL — resolved to `aiReferenceImageUrls` at read
+   * time, same convention as imagePath/imageUrl). Persisted so reopening
+   * the banner restores exactly which reference(s) were used. At most 2
+   * (Marketing Studio's own real cap — see providers/marketing-studio-
+   * provider.ts); every other model that accepts a reference uses only
+   * the first. */
+  aiReferenceImagePaths?: string[];
+  /** ai-region layers only — the model last selected for THIS region,
+   * persisted so reopening restores the same choice instead of always
+   * resetting to "auto". */
+  aiModel?: string;
+  /** ai-region layers only — Marketing Studio's resolution tier for this
+   * region. Only "1k"/"2k" are offered here (not "4k" — kept to the two
+   * tiers fast enough to fit this app's own synchronous generation
+   * window); meaningless/unused for any other model. */
+  aiResolution?: "1k" | "2k";
   // text
   text?: string;
   fontFamily?: string;

@@ -17,5 +17,8 @@ export interface GuidelineCheckResult {
 
 /** A layer with its imagePath (if any) resolved to a short-lived signed
  * URL for canvas rendering — never a public URL, same convention as
- * every other image in this app. */
-export type ResolvedLayer = DesignLayer & { imageUrl?: string | null };
+ * every other image in this app. `aiReferenceImageUrls` is the same
+ * resolution applied to an ai-region layer's own `aiReferenceImagePaths`
+ * (one signed URL per saved path, same order, `null` for a path that
+ * failed to resolve). */
+export type ResolvedLayer = DesignLayer & { imageUrl?: string | null; aiReferenceImageUrls?: (string | null)[] };

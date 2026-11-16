@@ -242,7 +242,7 @@ export function ImageComposer({
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           placeholder="Mô tả cảnh bạn muốn tạo..."
-          rows={2}
+          rows={4}
           maxLength={maxPromptLength}
           aria-invalid={promptOverLimit}
           className="resize-none border-none bg-transparent px-1 text-base shadow-none focus-visible:ring-0"

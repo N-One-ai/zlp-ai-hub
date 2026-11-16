@@ -16,7 +16,7 @@ export type ChangeBannerBrandInput = z.infer<typeof changeBannerBrandSchema>;
 
 const layerSchema = z.object({
   id: z.string().min(1),
-  type: z.enum(["background", "image", "text", "logo", "shape", "ai-region"]),
+  type: z.enum(["background", "image", "text", "logo", "shape", "ai-region", "element"]),
   x: z.number(),
   y: z.number(),
   width: z.number().min(0),
@@ -30,7 +30,17 @@ const layerSchema = z.object({
   featherPx: z.number().min(0).max(64).optional(),
   focalX: z.number().min(0).max(1).optional(),
   focalY: z.number().min(0).max(1).optional(),
-  aiPrompt: z.string().max(2000).optional(),
+  // 32000 mirrors generateImageInputSchema's own ceiling (lib/generation/
+  // schema.ts) — the highest confirmed limit across every configured
+  // model today (see model-meta.ts). This field is just the SAVED prompt
+  // text for an ai-region layer; it must never cap lower than what the
+  // generation call itself will accept, or a saved banner could end up
+  // with a prompt the UI let the user type but this schema then silently
+  // truncated/rejected on save.
+  aiPrompt: z.string().max(32000).optional(),
+  aiReferenceImagePaths: z.array(z.string()).max(2).optional(),
+  aiModel: z.string().optional(),
+  aiResolution: z.enum(["1k", "2k"]).optional(),
   text: z.string().optional(),
   fontFamily: z.string().optional(),
   fontFallback: z.string().optional(),
@@ -57,6 +67,12 @@ export const saveDesignDocumentSchema = z.object({
   sizeVariants: z.record(z.string(), z.array(layerSchema).max(100)).default({}),
 });
 export type SaveDesignDocumentInput = z.infer<typeof saveDesignDocumentSchema>;
+
+export const createBannerSizeVariantSchema = z.object({
+  sourceAssetId: z.string().uuid(),
+  sizePresetId: z.string().uuid(),
+});
+export type CreateBannerSizeVariantInput = z.infer<typeof createBannerSizeVariantSchema>;
 
 export const exportDesignSchema = z.object({
   assetId: z.string().uuid(),

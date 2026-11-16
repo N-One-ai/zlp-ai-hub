@@ -4,12 +4,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useRouter } from "next/navigation";
 import type Konva from "konva";
-import { Loader2, Save, Download, Copy, Sparkles, Trash2 } from "lucide-react";
+import { Loader2, Save, Download, Copy, Sparkles, Trash2, Pencil, LayoutGrid } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { EditorCanvas } from "./canvas";
@@ -21,15 +22,20 @@ import { TextContentPanel } from "./text-content-panel";
 import { LogoPanel } from "./logo-panel";
 import { AiImagePanel } from "./ai-image-panel";
 import { GuidelinePanel } from "./guideline-panel";
+import { ElementsPanel, type ElementAsset } from "./elements-panel";
+import { CollapsibleCard } from "./collapsible-card";
 import { BrandPicker } from "@/components/brand/brand-picker";
-import { SizePresetPicker } from "@/components/brand/size-preset-picker";
+import { SizePresetCards } from "@/components/brand/size-preset-cards";
 import { ModelPicker } from "@/components/generate/model-picker";
+import { ReferencePicker, type ReferenceImage } from "@/components/generate/reference-picker";
 import {
   saveDesignDocument,
   exportDesign,
   duplicateBannerAsset,
   changeBannerBrand,
   getBrandImageAssetsAction,
+  getBrandElementAssetsAction,
+  getBannerFamilyAction,
 } from "@/lib/design/actions";
 import {
   uploadImageAsset,
@@ -38,48 +44,58 @@ import {
   saveGenerationResult,
   resolveAssetAsReference,
 } from "@/lib/generation/actions";
+import { renameAsset } from "@/lib/library/actions";
 import { checkGuideline, hasBlockingFailure } from "@/lib/design/guideline-check";
 import { scaleLayersToSize } from "@/lib/design/resize";
 import { getDefaultLogoBox } from "@/lib/design/logo-size";
+import { buildExportFilename } from "@/lib/design/export-filename";
+import { AdaptSizesDialog } from "./adapt-sizes-dialog";
+import { BannerVariantsPanel } from "./banner-variants-panel";
 import { trackEvent } from "@/lib/analytics/track";
 import type { ResolvedLayer } from "@/types/design";
 import type { Brand, GuidelineVersion, SizePreset } from "@/types/brand";
 import type { ExportFormat } from "@/types/database";
-import { AUTO_MODEL_ID, type ModelMeta } from "@/lib/generation/model-meta";
+import type { LibraryAssetListItem } from "@/types/library";
+import type { BannerFamilyMember } from "@/lib/design/queries";
+import { AUTO_MODEL_ID, effectiveMaxPromptLength, type ModelMeta } from "@/lib/generation/model-meta";
+import { CharCounter } from "@/components/generate/char-counter";
 import type { GenerationJob } from "@/types/generation";
 
 const AI_REGION_POLL_INTERVAL_MS = 1_500;
 const AI_REGION_POLL_MAX_ATTEMPTS = 100;
+
+// Same model id this app duplicates as a local const in every composer
+// that needs to special-case it (image-composer.tsx, ai-image-panel.tsx,
+// character-builder.tsx) — Marketing Studio is the only model whose real
+// API takes aspect_ratio+resolution instead of literal width/height.
+const MARKETING_STUDIO_MODEL_ID = "higgsfield-marketing-studio";
+const REGION_RESOLUTIONS = ["1k", "2k"] as const;
+type RegionResolution = (typeof REGION_RESOLUTIONS)[number];
+// Marketing Studio's 9 confirmed aspect_ratio values (see
+// aspect-ratio-picker.tsx) minus "auto" — a region already has a real
+// drawn box, so the nearest DISCRETE ratio is always picked automatically
+// rather than exposing yet another control the brief didn't ask for.
+const REGION_ASPECT_RATIOS = ["1:1", "21:9", "16:9", "3:2", "4:3", "3:4", "2:3", "9:16"] as const;
+function nearestRegionAspectRatio(width: number, height: number): (typeof REGION_ASPECT_RATIOS)[number] {
+  const ratio = width / Math.max(1, height);
+  let best: (typeof REGION_ASPECT_RATIOS)[number] = "1:1";
+  let bestDiff = Infinity;
+  for (const candidate of REGION_ASPECT_RATIOS) {
+    const [w, h] = candidate.split(":").map(Number);
+    const diff = Math.abs(Math.log(ratio) - Math.log(w / h));
+    if (diff < bestDiff) {
+      bestDiff = diff;
+      best = candidate;
+    }
+  }
+  return best;
+}
 
 const MAX_DISPLAY_WIDTH = 640;
 const MAX_HISTORY = 50;
 
 function newLayerId(): string {
   return `layer-${Date.now()}-${Math.round(Math.random() * 1e6)}`;
-}
-
-function slugify(text: string): string {
-  return (
-    text
-      .normalize("NFD")
-      .replace(/[̀-ͯ]/g, "")
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "") || "untitled"
-  );
-}
-
-/** PRD §8.5: "Tên file mặc định dễ nhận biết: thương hiệu, chiến dịch/tên
- * tài sản, preset và phiên bản." */
-function buildExportFilename(
-  brandName: string,
-  assetName: string,
-  presetName: string | null,
-  version: number,
-  format: string
-): string {
-  const parts = [slugify(brandName), slugify(assetName || "banner"), presetName ? slugify(presetName) : null, `v${version}`];
-  return `${parts.filter(Boolean).join("-")}.${format}`;
 }
 
 export function EditorShell({
@@ -99,6 +115,7 @@ export function EditorShell({
   presets,
   guideline: initialGuideline,
   models,
+  referenceAssets,
 }: {
   assetId: string;
   brandId: string;
@@ -124,6 +141,13 @@ export function EditorShell({
   guideline: GuidelineVersion | null;
   /** Server-resolved CONFIGURED models only — see listAvailableModels(). */
   models: ModelMeta[];
+  /** Workspace's recent image assets for the "Vùng tạo ảnh AI" panel's
+   * Reference/"@ Elements" picker — same prop ImageComposer gets on the
+   * Tạo ảnh page (see ReferencePicker), NOT the decorative Elements
+   * library above (ElementsPanel/getBrandElementAssetsAction), which is a
+   * different feature despite the similarly-named button inside
+   * ReferencePicker itself. */
+  referenceAssets: LibraryAssetListItem[];
 }) {
   const router = useRouter();
   const stageRef = useRef<Konva.Stage>(null);
@@ -137,6 +161,14 @@ export function EditorShell({
   const [guideline, setGuideline] = useState(initialGuideline);
   const [isBrandChanging, setIsBrandChanging] = useState(false);
 
+  // Banner's own display name — integrates with creative_assets.name,
+  // the SAME field the Library/Dashboard already read/rename (renameAsset
+  // from lib/library/actions.ts), never a separate "banner title" column.
+  const [bannerName, setBannerName] = useState(assetName);
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState(assetName);
+  const [savingName, setSavingName] = useState(false);
+
   const [currentDocumentId, setCurrentDocumentId] = useState(documentId);
   const [currentVersion, setCurrentVersion] = useState(documentVersion);
   const [layers, setLayers] = useState<ResolvedLayer[]>(initialLayers);
@@ -148,15 +180,28 @@ export function EditorShell({
   const [dirty, setDirty] = useState(false);
   const [bgPickerOpen, setBgPickerOpen] = useState(false);
   const [bgImages, setBgImages] = useState<{ id: string; name: string; path: string; url: string | null }[]>([]);
+  const [elements, setElements] = useState<ElementAsset[]>([]);
+  const [elementsLoading, setElementsLoading] = useState(true);
+  const [elementsUploading, setElementsUploading] = useState(false);
   const [exportFormat, setExportFormat] = useState<ExportFormat>("png");
   const [isSaving, setIsSaving] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isDuplicating, setIsDuplicating] = useState(false);
   const [aiPanelOpen, setAiPanelOpen] = useState(false);
+  // "Tạo phiên bản kích thước khác" — this asset's whole size-variant
+  // family (itself if it's the root, or root+siblings if it's a variant —
+  // see getBannerFamilyAction). familyRootId starts as this asset's own
+  // id and is corrected once the real root comes back (only differs when
+  // this page itself IS a variant).
+  const [familyRootId, setFamilyRootId] = useState(assetId);
+  const [familyMembers, setFamilyMembers] = useState<BannerFamilyMember[]>([]);
+  const [adaptDialogOpen, setAdaptDialogOpen] = useState(false);
   const [activeTool, setActiveTool] = useState<"select" | "ai-region">("select");
   const [regionGenerating, setRegionGenerating] = useState(false);
   const [regionStatus, setRegionStatus] = useState<string | null>(null);
   const [regionModel, setRegionModel] = useState<string>(AUTO_MODEL_ID);
+  const [regionReferences, setRegionReferences] = useState<ReferenceImage[]>([]);
+  const [regionResolution, setRegionResolution] = useState<RegionResolution>("1k");
 
   // The active size preset lives in state (not just a prop) so switching
   // it in-editor updates the canvas/preview immediately — see
@@ -173,6 +218,20 @@ export function EditorShell({
 
   const displayScale = Math.min(1, MAX_DISPLAY_WIDTH / size.width);
   const selectedLayer = layers.find((l) => l.id === selectedId) ?? null;
+  // Same single-source-of-truth used by image-composer.tsx/ai-image-
+  // panel.tsx — mirrors the ACTUAL selected model's real capability
+  // (every configured model currently supports 32,000 chars) rather than
+  // an arbitrary, lower, unrelated app-only cap.
+  const regionMaxPromptLength = effectiveMaxPromptLength(regionModel, models);
+  const regionPromptOverLimit = (selectedLayer?.aiPrompt ?? "").length > regionMaxPromptLength;
+  const isRegionMarketingStudio = regionModel === MARKETING_STUDIO_MODEL_ID;
+  const isRegionAutoModel = regionModel === AUTO_MODEL_ID;
+  const regionModelMeta = models.find((m) => m.id === regionModel);
+  // "auto"'s own fallback chain never includes Marketing Studio (see
+  // providers/index.ts) — only Higgsfield Soul's single reference slot
+  // ever applies when "Tự động chọn" is picked, same reasoning
+  // image-composer.tsx already documents for its own maxReferenceImages.
+  const regionMaxReferenceImages = isRegionAutoModel ? 1 : (regionModelMeta?.maxReferenceImages ?? 0);
   const backgroundLayer = layers.find((l) => l.type === "background") ?? null;
   const taglineLayer = layers.find((l) => l.role === "tagline") ?? null;
   const subtitleLayer = layers.find((l) => l.role === "subtitle") ?? null;
@@ -199,6 +258,84 @@ export function EditorShell({
     void trackEvent({ name: "banner_editor_opened", assetId, brandId });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fire once per mount only, not on every assetId/brandId identity change within the same mount
   }, []);
+
+  // Elements library is scoped per brand (same convention as background
+  // images) — reloaded on mount and whenever the banner's brand changes.
+  // The loading indicator only covers the very first fetch (elementsLoading
+  // starts true); a brand switch refetches silently in the background
+  // rather than re-showing a spinner over an already-populated grid.
+  useEffect(() => {
+    let cancelled = false;
+    getBrandElementAssetsAction(brandId).then((result) => {
+      if (cancelled) return;
+      setElements(result);
+      setElementsLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [brandId]);
+
+  const refreshFamily = useCallback(() => {
+    getBannerFamilyAction(assetId).then((result) => {
+      setFamilyRootId(result.rootId);
+      setFamilyMembers(result.members);
+    });
+  }, [assetId]);
+
+  useEffect(() => {
+    refreshFamily();
+  }, [refreshFamily]);
+
+  /** Commits the editable banner title via the SAME renameAsset() the
+   * Library already uses for every other asset type — never a separate
+   * "banner title" field/table. Trims and falls back to the DB's own
+   * "Chưa đặt tên" convention (empty string) when cleared, matching
+   * renameAsset's own documented behavior. Reverts the draft to the last
+   * saved name on failure, so the header never shows a name that wasn't
+   * actually persisted. */
+  async function commitNameEdit() {
+    const trimmed = nameDraft.trim();
+    if (trimmed === bannerName) {
+      setEditingName(false);
+      return;
+    }
+    setSavingName(true);
+    try {
+      const result = await renameAsset(assetId, trimmed);
+      if (!result.ok) {
+        toast.error(result.error.message);
+        setNameDraft(bannerName);
+        return;
+      }
+      setBannerName(trimmed);
+      setEditingName(false);
+    } finally {
+      setSavingName(false);
+    }
+  }
+
+  /** Selecting a layer also restores an ai-region's OWN saved Reference/
+   * model/resolution choices into the panel's working state — called
+   * directly from the two real "user clicked a layer" entry points
+   * (canvas, layer list), never a useEffect keyed on selectedLayer, so
+   * this is a one-shot sync at the moment of selection, not a recurring
+   * re-derivation that could clobber an in-progress edit. */
+  function selectLayer(id: string | null) {
+    setSelectedId(id);
+    const layer = id ? layers.find((l) => l.id === id) : null;
+    if (layer?.type !== "ai-region") return;
+    setRegionModel(layer.aiModel ?? AUTO_MODEL_ID);
+    setRegionResolution(layer.aiResolution ?? "1k");
+    const paths = layer.aiReferenceImagePaths ?? [];
+    const urls = layer.aiReferenceImageUrls ?? [];
+    const restored: ReferenceImage[] = [];
+    for (let i = 0; i < paths.length; i++) {
+      const url = urls[i];
+      if (url) restored.push({ url, label: "Ảnh tham chiếu đã lưu", path: paths[i] });
+    }
+    setRegionReferences(restored);
+  }
 
   function pushHistory(next: ResolvedLayer[]) {
     setHistory((h) => {
@@ -418,6 +555,56 @@ export function EditorShell({
     setSelectedId(layer.id);
   }
 
+  /** Adds a library element as a brand-new, independently movable layer —
+   * scaled down (never up, never distorted — keeps the real aspect ratio
+   * from its stored width/height) to fit within a reasonable fraction of
+   * the canvas so a large source image doesn't swamp the banner, same
+   * "scale down to fit, center" convention as handlePlaceAiImage above. */
+  function handleAddElement(element: ElementAsset) {
+    if (!element.url) return;
+    const naturalWidth = element.width ?? 200;
+    const naturalHeight = element.height ?? 200;
+    const maxW = size.width * 0.4;
+    const maxH = size.height * 0.4;
+    const scale = Math.min(1, maxW / naturalWidth, maxH / naturalHeight);
+    const width = Math.max(8, Math.round(naturalWidth * scale));
+    const height = Math.max(8, Math.round(naturalHeight * scale));
+    const layer: ResolvedLayer = {
+      id: newLayerId(),
+      type: "element",
+      x: Math.round((size.width - width) / 2),
+      y: Math.round((size.height - height) / 2),
+      width,
+      height,
+      rotation: 0,
+      zIndex: Math.max(0, ...layers.map((l) => l.zIndex)) + 1,
+      imagePath: element.path,
+      imageUrl: element.url,
+    };
+    pushHistory([...layers, layer]);
+    setSelectedId(layer.id);
+  }
+
+  /** Uploads a new decorative asset into the SAME creative_assets table
+   * background images already use (uploadImageAsset), just tagged
+   * "element" so it shows up in this library instead of the background
+   * picker. Only adds it to the grid above — never auto-places it on the
+   * canvas, so uploading several at once doesn't surprise the user. */
+  async function handleUploadElement(file: File) {
+    setElementsUploading(true);
+    try {
+      const result = await uploadImageAsset(brandId, file, { tags: ["element"] });
+      if (!result.ok) {
+        toast.error(result.error.message);
+        return;
+      }
+      const refreshed = await getBrandElementAssetsAction(brandId);
+      setElements(refreshed);
+    } finally {
+      setElementsUploading(false);
+    }
+  }
+
   function handleReorder(id: string, direction: "up" | "down") {
     const sorted = [...layers].sort((a, b) => a.zIndex - b.zIndex);
     const idx = sorted.findIndex((l) => l.id === id);
@@ -447,6 +634,42 @@ export function EditorShell({
     pushHistory([...layers, layer]);
     setSelectedId(layer.id);
     setActiveTool("select");
+    // Brand-new region — starts from a clean slate, never inheriting
+    // whatever Reference/model/resolution happened to be set for a
+    // DIFFERENT region selected earlier in this session.
+    setRegionModel(AUTO_MODEL_ID);
+    setRegionResolution("1k");
+    setRegionReferences([]);
+  }
+
+  // Mirrors image-composer.tsx's own applyModelChangeSideEffects — a
+  // model switch that drops to a lower (or zero) reference-image cap must
+  // actually trim the extra slots, never silently send more images than
+  // the newly-selected model's real API accepts.
+  function handleRegionModelChange(nextModel: string) {
+    const nextMeta = models.find((m) => m.id === nextModel);
+    const nextMax = nextModel === AUTO_MODEL_ID ? 1 : (nextMeta?.maxReferenceImages ?? 0);
+    const trimmedRefs = regionReferences.length > nextMax ? regionReferences.slice(0, nextMax) : regionReferences;
+    setRegionReferences(trimmedRefs);
+    setRegionModel(nextModel);
+    if (selectedLayer) {
+      updateLayer(selectedLayer.id, {
+        aiModel: nextModel,
+        aiReferenceImagePaths: trimmedRefs.map((r) => r.path).filter((p): p is string => Boolean(p)),
+      });
+    }
+  }
+
+  function handleRegionResolutionChange(next: RegionResolution) {
+    setRegionResolution(next);
+    if (selectedLayer) updateLayer(selectedLayer.id, { aiResolution: next });
+  }
+
+  function handleRegionReferencesChange(next: ReferenceImage[]) {
+    setRegionReferences(next);
+    if (selectedLayer) {
+      updateLayer(selectedLayer.id, { aiReferenceImagePaths: next.map((r) => r.path).filter((p): p is string => Boolean(p)) });
+    }
   }
 
   /** Generates an image for the currently-selected ai-region layer.
@@ -469,13 +692,33 @@ export function EditorShell({
     setRegionGenerating(true);
     setRegionStatus("Đang gửi yêu cầu...");
     try {
+      // Marketing Studio's real API takes aspect_ratio + a resolution tier,
+      // never literal pixels (confirmed live — see marketing-studio-
+      // provider.ts) — picks the nearest of its 8 discrete ratios to the
+      // region's OWN drawn box so the result needs the least cover-fit
+      // crop. Every other model keeps sending exactSize exactly as
+      // before (unchanged behavior — these models' real APIs DO accept/
+      // snap arbitrary pixel sizes, see higgsfield-provider.ts).
+      const isMarketingStudioRegion = regionModel === MARKETING_STUDIO_MODEL_ID;
+      const sizeFields = isMarketingStudioRegion
+        ? { aspectRatio: nearestRegionAspectRatio(selectedLayer.width, selectedLayer.height), resolution: regionResolution }
+        : {
+            exactSize: {
+              width: Math.max(1, Math.round(selectedLayer.width)),
+              height: Math.max(1, Math.round(selectedLayer.height)),
+            },
+          };
+      const referenceFields = isMarketingStudioRegion
+        ? { referenceImageUrls: regionReferences.map((r) => r.url) }
+        : { referenceImageUrl: regionReferences[0]?.url };
       const result = await generateImages({
         brandId,
         prompt,
         negativePrompt: "",
         count: 1,
         model: regionModel,
-        exactSize: { width: Math.max(1, Math.round(selectedLayer.width)), height: Math.max(1, Math.round(selectedLayer.height)) },
+        ...sizeFields,
+        ...referenceFields,
       });
       if (!result.ok) {
         toast.error(result.error.message);
@@ -713,7 +956,7 @@ export function EditorShell({
       if (result.data.url) {
         const a = document.createElement("a");
         a.href = result.data.url;
-        a.download = buildExportFilename(brandName, assetName, size.name, exportVersion, exportFormat);
+        a.download = buildExportFilename(brandName, bannerName, size.name, exportVersion, exportFormat);
         a.click();
       }
       router.refresh();
@@ -738,6 +981,42 @@ export function EditorShell({
   return (
     <div className="flex flex-col lg:flex-row gap-4">
       <div className="flex flex-col gap-3 flex-1 min-w-0">
+        <div className="flex items-center gap-1.5">
+          {editingName ? (
+            <>
+              <Input
+                autoFocus
+                value={nameDraft}
+                onChange={(e) => setNameDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void commitNameEdit();
+                  if (e.key === "Escape") {
+                    setNameDraft(bannerName);
+                    setEditingName(false);
+                  }
+                }}
+                onBlur={() => void commitNameEdit()}
+                maxLength={200}
+                disabled={savingName}
+                className="h-8 max-w-xs font-heading text-base font-semibold"
+              />
+              {savingName && <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />}
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                setNameDraft(bannerName);
+                setEditingName(true);
+              }}
+              className="group -ml-1.5 flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-1 hover:bg-accent/50"
+            >
+              <h1 className="font-heading truncate text-base font-semibold">{bannerName || "Banner chưa đặt tên"}</h1>
+              <Pencil className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+            </button>
+          )}
+        </div>
+
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-2 flex-wrap">
             <EditorToolbar
@@ -755,11 +1034,6 @@ export function EditorShell({
               aiRegionToolActive={activeTool === "ai-region"}
               onToggleAiRegionTool={() => setActiveTool((t) => (t === "ai-region" ? "select" : "ai-region"))}
             />
-            {presets.length > 0 && (
-              <div className="w-48">
-                <SizePresetPicker presets={presets} value={size.id ?? ""} onChange={handleChangeSize} />
-              </div>
-            )}
           </div>
           <div className="flex items-center gap-2">
             <Button
@@ -775,6 +1049,10 @@ export function EditorShell({
             <Button size="sm" variant="outline" disabled={isDuplicating} onClick={handleDuplicate}>
               {isDuplicating ? <Loader2 className="size-3.5 animate-spin" /> : <Copy className="size-3.5" />}
               Nhân bản
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setAdaptDialogOpen(true)}>
+              <LayoutGrid className="size-3.5" />
+              Tạo phiên bản kích thước khác
             </Button>
             <Button size="sm" variant="outline" disabled={isSaving || !dirty} onClick={handleSave}>
               {isSaving ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}
@@ -814,7 +1092,7 @@ export function EditorShell({
             height={size.height}
             displayScale={displayScale}
             selectedId={selectedId}
-            onSelect={setSelectedId}
+            onSelect={selectLayer}
             onChangeLayer={updateLayer}
             drawingAiRegion={activeTool === "ai-region"}
             onDrawAiRegion={handleCreateAiRegion}
@@ -826,83 +1104,107 @@ export function EditorShell({
         </div>
       </div>
 
-      <div className="flex flex-col gap-4 w-full lg:w-72 shrink-0">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-sm">
-              <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[11px] font-semibold text-primary">
-                1
-              </span>
-              Thiết lập banner
-            </CardTitle>
-            <CardDescription>
-              {brandName}
-              {size.name ? ` · ${size.name} (${size.width} × ${size.height} px)` : ""}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-3">
+      <div className="flex flex-col gap-3 w-full lg:w-80 shrink-0 lg:sticky lg:top-20 lg:max-h-[calc(100svh-6rem)] lg:overflow-y-auto lg:pr-1 lg:pb-2">
+        <CollapsibleCard
+          title="Thiết lập banner"
+          description={`${brandName}${size.name ? ` · ${size.name} (${size.width} × ${size.height} px)` : ""}`}
+        >
+          <div className="flex flex-col gap-3">
             <div className="flex flex-col gap-1.5">
               <Label className="text-xs">Thương hiệu</Label>
               <BrandPicker brands={brands} value={brandId} onChange={handleChangeBrand} />
               {isBrandChanging && <p className="text-xs text-muted-foreground">Đang đổi thương hiệu...</p>}
             </div>
-            {presets.length > 0 && (
-              <div className="flex flex-col gap-1.5">
-                <Label className="text-xs">Kích thước</Label>
-                <SizePresetPicker presets={presets} value={size.id ?? ""} onChange={handleChangeSize} />
-              </div>
-            )}
-          </CardContent>
-        </Card>
+            <div className="flex flex-col gap-1.5">
+              <Label className="text-xs">Kích thước</Label>
+              <SizePresetCards presets={presets} value={size.id ?? ""} onChange={handleChangeSize} />
+            </div>
+          </div>
+        </CollapsibleCard>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm">Lớp</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <LayerPanel
-              layers={layers}
-              selectedId={selectedId}
-              onSelect={setSelectedId}
-              onToggleLock={handleToggleLock}
-              onToggleVisible={handleToggleVisible}
-              onDelete={handleDeleteLayer}
-              onReorder={handleReorder}
+        <CollapsibleCard
+          title="Phiên bản kích thước"
+          description={`${familyMembers.length} phiên bản`}
+          badge={
+            familyMembers.some((m) => m.needsReview) ? (
+              <span className="text-xs font-medium text-warning">Cần kiểm tra</span>
+            ) : undefined
+          }
+        >
+          <div className="flex flex-col gap-2">
+            {familyMembers.length <= 1 && (
+              <p className="text-xs text-muted-foreground">
+                Chưa có phiên bản kích thước nào khác — bấm &quot;Tạo phiên bản kích thước khác&quot; ở thanh công cụ
+                phía trên để adapt thiết kế này sang các preset khác.
+              </p>
+            )}
+            <BannerVariantsPanel
+              rootId={familyRootId}
+              currentAssetId={assetId}
+              members={familyMembers}
+              brandName={brandName}
+              exportFormat={exportFormat}
+              onRefresh={refreshFamily}
             />
-          </CardContent>
-        </Card>
+          </div>
+        </CollapsibleCard>
+
+        <CollapsibleCard title="Lớp" badge={<span className="text-xs text-muted-foreground">{layers.length}</span>}>
+          <LayerPanel
+            layers={layers}
+            selectedId={selectedId}
+            onSelect={selectLayer}
+            onToggleLock={handleToggleLock}
+            onToggleVisible={handleToggleVisible}
+            onDelete={handleDeleteLayer}
+            onReorder={handleReorder}
+          />
+        </CollapsibleCard>
 
         {guideline && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm">Logo thương hiệu</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <LogoPanel logos={guideline.logos} activePath={layers.find((l) => l.type === "logo")?.imagePath} onSelect={applyLogoVariant} />
-            </CardContent>
-          </Card>
+          <CollapsibleCard title="Logo thương hiệu" defaultOpen={false}>
+            <LogoPanel logos={guideline.logos} activePath={layers.find((l) => l.type === "logo")?.imagePath} onSelect={applyLogoVariant} />
+          </CollapsibleCard>
         )}
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm">Nội dung chữ</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <TextContentPanel
-              taglineText={taglineLayer?.text ?? ""}
-              subtitleText={subtitleLayer?.text ?? ""}
-              taglineExists={Boolean(taglineLayer)}
-              subtitleExists={Boolean(subtitleLayer)}
-              onChangeTagline={(text) => handleTextContentChange("tagline", text)}
-              onChangeSubtitle={(text) => handleTextContentChange("subtitle", text)}
-              onSelectTagline={() => taglineLayer && setSelectedId(taglineLayer.id)}
-              onSelectSubtitle={() => subtitleLayer && setSelectedId(subtitleLayer.id)}
-            />
-          </CardContent>
-        </Card>
+        <CollapsibleCard title="Nội dung chữ">
+          <TextContentPanel
+            taglineText={taglineLayer?.text ?? ""}
+            subtitleText={subtitleLayer?.text ?? ""}
+            taglineExists={Boolean(taglineLayer)}
+            subtitleExists={Boolean(subtitleLayer)}
+            taglineAlign={taglineLayer?.align ?? "left"}
+            taglineColor={taglineLayer?.color ?? "#ffffff"}
+            subtitleAlign={subtitleLayer?.align ?? "left"}
+            subtitleColor={subtitleLayer?.color ?? "#ffffff"}
+            onChangeTagline={(text) => handleTextContentChange("tagline", text)}
+            onChangeSubtitle={(text) => handleTextContentChange("subtitle", text)}
+            onChangeTaglineAlign={(align) => taglineLayer && updateLayer(taglineLayer.id, { align })}
+            onChangeTaglineColor={(color) => taglineLayer && updateLayer(taglineLayer.id, { color })}
+            onChangeSubtitleAlign={(align) => subtitleLayer && updateLayer(subtitleLayer.id, { align })}
+            onChangeSubtitleColor={(color) => subtitleLayer && updateLayer(subtitleLayer.id, { color })}
+            onSelectTagline={() => taglineLayer && selectLayer(taglineLayer.id)}
+            onSelectSubtitle={() => subtitleLayer && selectLayer(subtitleLayer.id)}
+            guidelineColors={guideline?.colors}
+          />
+        </CollapsibleCard>
+
+        <CollapsibleCard
+          title="Elements"
+          description="Hình trang trí từ thư viện của thương hiệu — bấm để thêm vào banner."
+          defaultOpen={false}
+        >
+          <ElementsPanel
+            elements={elements}
+            loading={elementsLoading}
+            uploading={elementsUploading}
+            onSelect={handleAddElement}
+            onUpload={handleUploadElement}
+          />
+        </CollapsibleCard>
 
         {selectedLayer?.type === "text" && (
-          <Card>
+          <Card className="shrink-0">
             <CardHeader>
               <CardTitle className="text-sm">Thuộc tính chữ</CardTitle>
             </CardHeader>
@@ -917,7 +1219,7 @@ export function EditorShell({
         )}
 
         {selectedLayer?.type === "background" && selectedLayer.imageUrl && (
-          <Card>
+          <Card className="shrink-0">
             <CardHeader>
               <CardTitle className="text-sm">Vị trí ảnh nền</CardTitle>
             </CardHeader>
@@ -955,7 +1257,7 @@ export function EditorShell({
         )}
 
         {selectedLayer?.type === "image" && selectedLayer.featherPx !== undefined && (
-          <Card>
+          <Card className="shrink-0">
             <CardHeader>
               <CardTitle className="text-sm">Thuộc tính ảnh AI</CardTitle>
             </CardHeader>
@@ -966,7 +1268,7 @@ export function EditorShell({
         )}
 
         {selectedLayer?.type === "ai-region" && (
-          <Card>
+          <Card className="shrink-0">
             <CardHeader>
               <CardTitle className="text-sm">Vùng tạo ảnh AI</CardTitle>
             </CardHeader>
@@ -980,15 +1282,60 @@ export function EditorShell({
                 value={selectedLayer.aiPrompt ?? ""}
                 onChange={(e) => updateLayer(selectedLayer.id, { aiPrompt: e.target.value })}
                 placeholder="Mô tả ảnh muốn tạo trong vùng này..."
-                rows={3}
-                maxLength={2000}
+                rows={4}
+                maxLength={regionMaxPromptLength}
+                aria-invalid={regionPromptOverLimit}
                 disabled={regionGenerating}
               />
-              <ModelPicker models={models} value={regionModel} onChange={setRegionModel} />
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs text-muted-foreground">
+                  {regionPromptOverLimit
+                    ? `Vượt giới hạn — tối đa ${regionMaxPromptLength.toLocaleString("vi-VN")} ký tự.`
+                    : " "}
+                </p>
+                <CharCounter current={(selectedLayer.aiPrompt ?? "").length} max={regionMaxPromptLength} />
+              </div>
+
+              <ReferencePicker
+                values={regionReferences}
+                onChange={handleRegionReferencesChange}
+                elements={referenceAssets}
+                max={regionMaxReferenceImages}
+                disabled={regionMaxReferenceImages === 0 || regionGenerating}
+                disabledReason="Model đang chọn chưa xác nhận hỗ trợ ảnh tham chiếu."
+              />
+
+              <ModelPicker models={models} value={regionModel} onChange={handleRegionModelChange} />
+
+              {isRegionMarketingStudio && (
+                <div className="flex flex-col gap-1.5">
+                  <Label className="text-xs">Độ phân giải</Label>
+                  <div className="flex gap-1.5">
+                    {REGION_RESOLUTIONS.map((r) => (
+                      <Button
+                        key={r}
+                        type="button"
+                        size="sm"
+                        variant={regionResolution === r ? "secondary" : "outline"}
+                        disabled={regionGenerating}
+                        onClick={() => handleRegionResolutionChange(r)}
+                        className="uppercase"
+                      >
+                        {r}
+                      </Button>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Marketing Studio dùng tỷ lệ khung hình + độ phân giải thay vì kích thước pixel — tỷ lệ gần nhất với
+                    vùng đã vẽ được tự chọn ({nearestRegionAspectRatio(selectedLayer.width, selectedLayer.height)}).
+                  </p>
+                </div>
+              )}
+
               <Button
                 type="button"
                 size="sm"
-                disabled={regionGenerating || !(selectedLayer.aiPrompt ?? "").trim()}
+                disabled={regionGenerating || !(selectedLayer.aiPrompt ?? "").trim() || regionPromptOverLimit}
                 onClick={handleGenerateAiRegionImage}
               >
                 {regionGenerating ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
@@ -1048,14 +1395,20 @@ export function EditorShell({
           </Card>
         )}
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm">Kiểm tra guideline</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <GuidelinePanel results={results} />
-          </CardContent>
-        </Card>
+        <CollapsibleCard
+          title="Kiểm tra guideline"
+          badge={
+            blocked ? (
+              <span className="text-xs font-medium text-destructive">Có lỗi</span>
+            ) : results.some((r) => r.severity === "review") ? (
+              <span className="text-xs font-medium text-warning">Cần xem</span>
+            ) : (
+              <span className="text-xs font-medium text-success">Ổn</span>
+            )
+          }
+        >
+          <GuidelinePanel results={results} />
+        </CollapsibleCard>
       </div>
 
       {backgroundLayer?.imageUrl && (
@@ -1095,6 +1448,16 @@ export function EditorShell({
           </label>
         </DialogContent>
       </Dialog>
+
+      <AdaptSizesDialog
+        open={adaptDialogOpen}
+        onOpenChange={setAdaptDialogOpen}
+        sourceAssetId={assetId}
+        currentSizePresetId={size.id}
+        presets={presets}
+        existingVariantPresetIds={familyMembers.filter((m) => !m.isOriginal && m.sizePresetId).map((m) => m.sizePresetId as string)}
+        onDone={refreshFamily}
+      />
     </div>
   );
 }
