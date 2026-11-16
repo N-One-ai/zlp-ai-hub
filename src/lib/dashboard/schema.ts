@@ -85,11 +85,23 @@ export const dashboardFeatureCardInputSchema = z
   });
 export type DashboardFeatureCardInput = z.infer<typeof dashboardFeatureCardInputSchema>;
 
-export const dashboardMarqueeSpeedSchema = z.number().int().min(15).max(90);
+// Upper bound raised from 90 to 150 so "Chậm" can be a genuinely slow
+// 120s/loop (half the speed of the original 60s value) — see
+// migration 0015_dashboard_marquee_style.sql, which widens the matching
+// DB check constraint the same way.
+export const dashboardMarqueeSpeedSchema = z.number().int().min(15).max(150);
+
+export const dashboardMarqueeFontSizeSchema = z.enum(["sm", "md", "lg"]);
+export type DashboardMarqueeFontSize = z.infer<typeof dashboardMarqueeFontSizeSchema>;
+
+export const dashboardMarqueeTextStyleSchema = z.enum(["solid", "stroke"]);
+export type DashboardMarqueeTextStyle = z.infer<typeof dashboardMarqueeTextStyleSchema>;
 
 export const dashboardMarqueeInputSchema = z.object({
   text: z.string().trim().min(1, "Vui lòng nhập nội dung dải chữ").max(200),
   speedSeconds: dashboardMarqueeSpeedSchema.default(40),
+  fontSize: dashboardMarqueeFontSizeSchema.default("sm"),
+  textStyle: dashboardMarqueeTextStyleSchema.default("solid"),
   isActive: z.boolean().default(true),
 });
 export type DashboardMarqueeInput = z.infer<typeof dashboardMarqueeInputSchema>;

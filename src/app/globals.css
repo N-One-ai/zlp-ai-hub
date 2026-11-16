@@ -278,3 +278,19 @@
     transform: translateX(-50%);
   }
 }
+
+/* Marquee "stroke" text style (dashboard-marquee.tsx) — outlined letters
+ * like the reference design. `-webkit-text-stroke` has no standard
+ * equivalent, so the DEFAULT here is the same solid, filled text every
+ * browser renders, and the outline is layered on top only inside
+ * `@supports`, where it's actually guaranteed to work — never a browser
+ * silently showing invisible (transparent-on-transparent) text. */
+.marquee-text-stroke {
+  color: var(--muted-foreground);
+}
+@supports (-webkit-text-stroke: 1px black) {
+  .marquee-text-stroke {
+    color: transparent;
+    -webkit-text-stroke: 1px var(--foreground);
+  }
+}

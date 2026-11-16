@@ -524,6 +524,8 @@ export async function updateDashboardMarquee(workspaceId: string, rawInput: unkn
       workspace_id: workspaceId,
       text: parsed.data.text,
       speed_seconds: parsed.data.speedSeconds,
+      font_size: parsed.data.fontSize,
+      text_style: parsed.data.textStyle,
       is_active: parsed.data.isActive,
       created_by: user.id,
     },

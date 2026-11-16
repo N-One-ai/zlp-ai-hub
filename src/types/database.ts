@@ -715,6 +715,8 @@ export interface Database {
           workspace_id: string;
           text: string;
           speed_seconds: number;
+          font_size: string;
+          text_style: string;
           is_active: boolean;
           created_by: string | null;
           created_at: string;
@@ -725,6 +727,8 @@ export interface Database {
           workspace_id: string;
           text?: string;
           speed_seconds?: number;
+          font_size?: string;
+          text_style?: string;
           is_active?: boolean;
           created_by?: string | null;
           created_at?: string;
@@ -735,6 +739,8 @@ export interface Database {
           workspace_id?: string;
           text?: string;
           speed_seconds?: number;
+          font_size?: string;
+          text_style?: string;
           is_active?: boolean;
           created_by?: string | null;
           created_at?: string;

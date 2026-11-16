@@ -63,6 +63,9 @@ export interface DashboardFeatureCard {
   isCustomized: boolean;
 }
 
+export type DashboardMarqueeFontSize = "sm" | "md" | "lg";
+export type DashboardMarqueeTextStyle = "solid" | "stroke";
+
 /** The Dashboard marquee strip's effective config — already merged with
  * the built-in default (see lib/dashboard/marquee-defaults.ts) when no
  * row has been saved yet, same `isCustomized` convention as
@@ -70,6 +73,8 @@ export interface DashboardFeatureCard {
 export interface DashboardMarquee {
   text: string;
   speedSeconds: number;
+  fontSize: DashboardMarqueeFontSize;
+  textStyle: DashboardMarqueeTextStyle;
   isActive: boolean;
   isCustomized: boolean;
 }

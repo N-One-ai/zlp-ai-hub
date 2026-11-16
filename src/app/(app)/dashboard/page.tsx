@@ -101,7 +101,14 @@ export default async function DashboardPage() {
         )}
       </div>
 
-      {marquee.isActive && <DashboardMarquee text={marquee.text} speedSeconds={marquee.speedSeconds} />}
+      {marquee.isActive && (
+        <DashboardMarquee
+          text={marquee.text}
+          speedSeconds={marquee.speedSeconds}
+          fontSize={marquee.fontSize}
+          textStyle={marquee.textStyle}
+        />
+      )}
 
       <div className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
