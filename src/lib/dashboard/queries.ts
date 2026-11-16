@@ -1,7 +1,8 @@
 import { createClient } from "@/lib/supabase/server";
 import { resolveDashboardBannerUrl } from "./storage";
 import { DASHBOARD_FEATURE_CARD_DEFAULTS } from "./feature-card-defaults";
-import type { DashboardBanner, DashboardFeatureCard, DashboardFeatureCardSlot } from "@/types/dashboard";
+import { DASHBOARD_MARQUEE_DEFAULT_TEXT, DASHBOARD_MARQUEE_DEFAULT_SPEED_SECONDS } from "./marquee-defaults";
+import type { DashboardBanner, DashboardFeatureCard, DashboardFeatureCardSlot, DashboardMarquee } from "@/types/dashboard";
 import type { Database } from "@/types/database";
 
 type DashboardBannerRow = Database["public"]["Tables"]["dashboard_banners"]["Row"];
@@ -139,4 +140,37 @@ export async function getDashboardFeatureCards(workspaceId: string): Promise<Das
   return Promise.all(
     FEATURE_CARD_SLOTS.map((slot) => toDashboardFeatureCard(supabase, slot, rowBySlot.get(slot) ?? null))
   );
+}
+
+/** One row per workspace, or none — a missing row means "use the
+ * built-in default text/speed", same no-row-means-default convention as
+ * getDashboardFeatureCards. Used both by the real Dashboard (only when
+ * `isActive`) and the admin settings form (always, to prefill it). */
+export async function getDashboardMarquee(workspaceId: string): Promise<DashboardMarquee> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("dashboard_marquee")
+    .select("*")
+    .eq("workspace_id", workspaceId)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[getDashboardMarquee]", error);
+  }
+
+  if (!data) {
+    return {
+      text: DASHBOARD_MARQUEE_DEFAULT_TEXT,
+      speedSeconds: DASHBOARD_MARQUEE_DEFAULT_SPEED_SECONDS,
+      isActive: true,
+      isCustomized: false,
+    };
+  }
+
+  return {
+    text: data.text || DASHBOARD_MARQUEE_DEFAULT_TEXT,
+    speedSeconds: data.speed_seconds,
+    isActive: data.is_active,
+    isCustomized: true,
+  };
 }

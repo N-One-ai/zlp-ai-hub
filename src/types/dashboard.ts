@@ -62,3 +62,14 @@ export interface DashboardFeatureCard {
   isActive: boolean;
   isCustomized: boolean;
 }
+
+/** The Dashboard marquee strip's effective config — already merged with
+ * the built-in default (see lib/dashboard/marquee-defaults.ts) when no
+ * row has been saved yet, same `isCustomized` convention as
+ * DashboardFeatureCard. */
+export interface DashboardMarquee {
+  text: string;
+  speedSeconds: number;
+  isActive: boolean;
+  isCustomized: boolean;
+}

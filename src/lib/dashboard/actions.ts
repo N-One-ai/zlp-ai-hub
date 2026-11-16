@@ -7,6 +7,7 @@ import {
   dashboardBannerInputSchema,
   dashboardFeatureCardInputSchema,
   dashboardFeatureCardSlotSchema,
+  dashboardMarqueeInputSchema,
   reorderDashboardBannersSchema,
   type DashboardBannerInput,
   type DashboardFeatureCardInput,
@@ -495,6 +496,43 @@ export async function resetDashboardFeatureCard(workspaceId: string, rawSlot: un
 
   if (existing?.image_path) {
     await deleteDashboardBannerAsset(supabase, existing.image_path);
+  }
+
+  revalidateDashboard();
+  return ok(null);
+}
+
+// ------------------------------------------------------------------ //
+// Dashboard marquee strip                                               //
+// ------------------------------------------------------------------ //
+
+/** Admin-only (RLS), upserts the one row for this workspace — there is
+ * never more than one, so this is both "configure it for the first
+ * time" and "edit it" depending on whether a row already exists. */
+export async function updateDashboardMarquee(workspaceId: string, rawInput: unknown): Promise<ActionResult<null>> {
+  const parsed = dashboardMarqueeInputSchema.safeParse(rawInput);
+  if (!parsed.success) return err("VALIDATION_ERROR", parsed.error.issues[0]?.message ?? GENERIC_ERROR);
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return err("UNAUTHORIZED", "Bạn cần đăng nhập");
+
+  const { error } = await supabase.from("dashboard_marquee").upsert(
+    {
+      workspace_id: workspaceId,
+      text: parsed.data.text,
+      speed_seconds: parsed.data.speedSeconds,
+      is_active: parsed.data.isActive,
+      created_by: user.id,
+    },
+    { onConflict: "workspace_id" }
+  );
+
+  if (error) {
+    console.error("[updateDashboardMarquee]", error);
+    return err("DB_ERROR", "Không thể lưu dải chữ. Bạn có quyền Admin trong workspace này không?");
   }
 
   revalidateDashboard();

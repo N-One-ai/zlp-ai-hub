@@ -5,15 +5,16 @@ import { requireActiveWorkspace } from "@/lib/workspace/guards";
 import { getRecentAssets, getLibraryAssets } from "@/lib/library/queries";
 import { getBrands } from "@/lib/brand/queries";
 import { getWorkspaceMembers, getCurrentUser } from "@/lib/workspace/queries";
-import { getActiveDashboardBanners, getDashboardFeatureCards } from "@/lib/dashboard/queries";
+import { getActiveDashboardBanners, getDashboardFeatureCards, getDashboardMarquee } from "@/lib/dashboard/queries";
 import { AssetGrid } from "@/components/library/asset-grid";
-import { StatCard } from "@/components/layout/stat-card";
 import { EmptyState } from "@/components/layout/empty-state";
+import { CompactStats } from "@/components/dashboard/compact-stats";
 import { ImageHeroArt } from "@/components/dashboard/image-hero-art";
 import { BannerHeroArt } from "@/components/dashboard/banner-hero-art";
 import { DashboardHeroArt } from "@/components/dashboard/dashboard-hero-art";
 import { BannerCarousel } from "@/components/dashboard/banner-carousel";
 import { DashboardFeatureCardTile } from "@/components/dashboard/feature-card-tile";
+import { DashboardMarquee } from "@/components/dashboard/dashboard-marquee";
 import type { DashboardFeatureCardSlot } from "@/types/dashboard";
 
 const FEATURE_CARD_META: Record<
@@ -27,24 +28,35 @@ const FEATURE_CARD_META: Record<
 export default async function DashboardPage() {
   const workspace = await requireActiveWorkspace();
 
-  const [recentAssets, brands, members, libraryTotal, user, dashboardBanners, featureCards] = await Promise.all([
-    getRecentAssets(workspace.workspaceId),
-    getBrands(workspace.workspaceId),
-    getWorkspaceMembers(workspace.workspaceId),
-    getLibraryAssets(workspace.workspaceId, {}),
-    getCurrentUser(),
-    getActiveDashboardBanners(workspace.workspaceId),
-    getDashboardFeatureCards(workspace.workspaceId),
-  ]);
+  const [recentAssets, brands, members, libraryTotal, user, dashboardBanners, featureCards, marquee] =
+    await Promise.all([
+      getRecentAssets(workspace.workspaceId),
+      getBrands(workspace.workspaceId),
+      getWorkspaceMembers(workspace.workspaceId),
+      getLibraryAssets(workspace.workspaceId, {}),
+      getCurrentUser(),
+      getActiveDashboardBanners(workspace.workspaceId),
+      getDashboardFeatureCards(workspace.workspaceId),
+      getDashboardMarquee(workspace.workspaceId),
+    ]);
 
   const firstName = (user?.name || "bạn").split(" ").pop();
   const visibleFeatureCards = featureCards.filter((c) => c.isActive);
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <p className="text-sm text-muted-foreground">Chào {firstName} 👋</p>
-        <h1 className="font-heading text-2xl font-bold tracking-tight">{workspace.workspaceName}</h1>
+      <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+        <div>
+          <p className="text-sm text-muted-foreground">Chào {firstName} 👋</p>
+          <h1 className="font-heading text-2xl font-bold tracking-tight">{workspace.workspaceName}</h1>
+        </div>
+        <CompactStats
+          items={[
+            { label: "Tài sản", value: libraryTotal.total, icon: Library },
+            { label: "Thương hiệu", value: brands.filter((b) => b.status === "active").length, icon: Palette },
+            { label: "Thành viên", value: members.filter((m) => m.status === "active").length, icon: Users },
+          ]}
+        />
       </div>
 
       <div className={`grid gap-4 items-stretch ${visibleFeatureCards.length > 0 ? "lg:grid-cols-[1.4fr_1fr]" : ""}`}>
@@ -89,11 +101,7 @@ export default async function DashboardPage() {
         )}
       </div>
 
-      <div className="grid grid-cols-3 gap-3 sm:gap-4">
-        <StatCard label="Tài sản" value={libraryTotal.total} icon={Library} />
-        <StatCard label="Thương hiệu" value={brands.filter((b) => b.status === "active").length} icon={Palette} />
-        <StatCard label="Thành viên" value={members.filter((m) => m.status === "active").length} icon={Users} />
-      </div>
+      {marquee.isActive && <DashboardMarquee text={marquee.text} speedSeconds={marquee.speedSeconds} />}
 
       <div className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
