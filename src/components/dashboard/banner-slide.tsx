@@ -141,7 +141,7 @@ export function BannerSlideContent({
             {data.title || "Tiêu đề banner"}
           </h2>
           {data.description && (
-            <p className="hidden text-sm text-muted-foreground line-clamp-2 @sm:block">{data.description}</p>
+            <p className="hidden text-sm text-muted-foreground text-balance line-clamp-2 @sm:block">{data.description}</p>
           )}
           {data.ctaLabel && data.ctaUrl && (
             <CtaLink
