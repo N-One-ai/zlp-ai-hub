@@ -84,3 +84,12 @@ export const dashboardFeatureCardInputSchema = z
     path: ["ctaUrl"],
   });
 export type DashboardFeatureCardInput = z.infer<typeof dashboardFeatureCardInputSchema>;
+
+export const dashboardMarqueeSpeedSchema = z.number().int().min(15).max(90);
+
+export const dashboardMarqueeInputSchema = z.object({
+  text: z.string().trim().min(1, "Vui lòng nhập nội dung dải chữ").max(200),
+  speedSeconds: dashboardMarqueeSpeedSchema.default(40),
+  isActive: z.boolean().default(true),
+});
+export type DashboardMarqueeInput = z.infer<typeof dashboardMarqueeInputSchema>;

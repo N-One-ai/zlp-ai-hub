@@ -709,6 +709,39 @@ export interface Database {
         };
         Relationships: [];
       };
+      dashboard_marquee: {
+        Row: {
+          id: string;
+          workspace_id: string;
+          text: string;
+          speed_seconds: number;
+          is_active: boolean;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          workspace_id: string;
+          text?: string;
+          speed_seconds?: number;
+          is_active?: boolean;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          workspace_id?: string;
+          text?: string;
+          speed_seconds?: number;
+          is_active?: boolean;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {

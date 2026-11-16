@@ -5,6 +5,17 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
+  /* Registered as a proper `--animate-*` design token (generates the
+   * `.animate-marquee` utility, same mechanism tw-animate-css itself uses
+   * for `.animate-spin` etc.) rather than a plain top-level `@keyframes`
+   * block — Tailwind v4's build otherwise tree-shakes an unregistered
+   * `@keyframes` it doesn't see referenced by a recognized utility name,
+   * even when something else points `animation:` straight at it. The
+   * `var(--marquee-duration)` inside stays unresolved at build time and
+   * is substituted per-element at computed-value time from the inline
+   * style dashboard-marquee.tsx sets, so each marquee can run at its own
+   * configured speed off this single shared token. */
+  --animate-marquee: marquee var(--marquee-duration, 40s) linear infinite;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   /* Single source of truth for the app's typeface — every component reads
@@ -250,5 +261,20 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+/* Dashboard marquee (components/dashboard/dashboard-marquee.tsx) — the
+ * track renders its content TWICE back to back and scrolls exactly 50%
+ * of its own width, so the loop point is invisible (the second copy is
+ * already in the exact position the first one started in). Automatically
+ * reduced to a 0.01ms single frame by the prefers-reduced-motion rule
+ * above — never needs its own reduced-motion branch. */
+@keyframes marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
   }
 }
