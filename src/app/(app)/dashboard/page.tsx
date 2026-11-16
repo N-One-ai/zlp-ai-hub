@@ -4,22 +4,25 @@ import { requireActiveWorkspace } from "@/lib/workspace/guards";
 import { getRecentAssets, getLibraryAssets } from "@/lib/library/queries";
 import { getBrands } from "@/lib/brand/queries";
 import { getWorkspaceMembers, getCurrentUser } from "@/lib/workspace/queries";
+import { getActiveDashboardBanners } from "@/lib/dashboard/queries";
 import { AssetGrid } from "@/components/library/asset-grid";
 import { StatCard } from "@/components/layout/stat-card";
 import { EmptyState } from "@/components/layout/empty-state";
 import { ImageHeroArt } from "@/components/dashboard/image-hero-art";
 import { BannerHeroArt } from "@/components/dashboard/banner-hero-art";
 import { DashboardHeroArt } from "@/components/dashboard/dashboard-hero-art";
+import { BannerCarousel } from "@/components/dashboard/banner-carousel";
 
 export default async function DashboardPage() {
   const workspace = await requireActiveWorkspace();
 
-  const [recentAssets, brands, members, libraryTotal, user] = await Promise.all([
+  const [recentAssets, brands, members, libraryTotal, user, dashboardBanners] = await Promise.all([
     getRecentAssets(workspace.workspaceId),
     getBrands(workspace.workspaceId),
     getWorkspaceMembers(workspace.workspaceId),
     getLibraryAssets(workspace.workspaceId, {}),
     getCurrentUser(),
+    getActiveDashboardBanners(workspace.workspaceId),
   ]);
 
   const firstName = (user?.name || "bạn").split(" ").pop();
@@ -32,23 +35,27 @@ export default async function DashboardPage() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr] items-stretch">
-        <div className="relative flex items-center overflow-hidden rounded-xl ring-1 ring-border bg-gradient-to-br from-primary/14 via-card to-primary/6 min-h-56 lg:min-h-0">
-          <div className="relative z-10 flex flex-col gap-3 p-6 sm:p-8 max-w-[85%] sm:max-w-[60%]">
-            <span className="inline-flex w-fit items-center rounded-md bg-gradient-to-r from-primary to-accent px-2 py-0.5 text-[11px] font-bold text-primary-foreground">
-              Creative Hub
-            </span>
-            <h2 className="font-heading text-2xl sm:text-3xl font-bold tracking-tight text-balance">
-              Tạo nội dung marketing bằng AI, đúng thương hiệu
-            </h2>
-            <p className="text-sm text-muted-foreground max-w-sm">
-              Tạo, quản lý và tải xuống hình ảnh marketing đúng nhận diện thương hiệu — cho{" "}
-              {workspace.workspaceName}.
-            </p>
+        {dashboardBanners.length > 0 ? (
+          <BannerCarousel banners={dashboardBanners} />
+        ) : (
+          <div className="relative flex items-center overflow-hidden rounded-xl ring-1 ring-border bg-gradient-to-br from-primary/14 via-card to-primary/6 min-h-56 lg:min-h-0">
+            <div className="relative z-10 flex flex-col gap-3 p-6 sm:p-8 max-w-[85%] sm:max-w-[60%]">
+              <span className="inline-flex w-fit items-center rounded-md bg-gradient-to-r from-primary to-accent px-2 py-0.5 text-[11px] font-bold text-primary-foreground">
+                Creative Hub
+              </span>
+              <h2 className="font-heading text-2xl sm:text-3xl font-bold tracking-tight text-balance">
+                Tạo nội dung marketing bằng AI, đúng thương hiệu
+              </h2>
+              <p className="text-sm text-muted-foreground max-w-sm">
+                Tạo, quản lý và tải xuống hình ảnh marketing đúng nhận diện thương hiệu — cho{" "}
+                {workspace.workspaceName}.
+              </p>
+            </div>
+            <div className="absolute inset-y-0 right-0 z-0 w-[55%] sm:w-[45%] [mask-image:linear-gradient(to_right,transparent,black_30%)]">
+              <DashboardHeroArt className="absolute inset-0 size-full" />
+            </div>
           </div>
-          <div className="absolute inset-y-0 right-0 z-0 w-[55%] sm:w-[45%] [mask-image:linear-gradient(to_right,transparent,black_30%)]">
-            <DashboardHeroArt className="absolute inset-0 size-full" />
-          </div>
-        </div>
+        )}
 
         <div className="flex flex-col gap-4">
           <Link

@@ -1,7 +1,18 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Image as ImageIcon, LayoutTemplate, Library, Palette, Users, Settings, UserRound, Mic } from "lucide-react";
+import {
+  LayoutDashboard,
+  Image as ImageIcon,
+  LayoutTemplate,
+  Library,
+  Palette,
+  Users,
+  Settings,
+  UserRound,
+  Mic,
+  GalleryHorizontal,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { MembershipRole } from "@/types/database";
@@ -33,6 +44,7 @@ const GROUPS: { label: string; items: NavItem[]; adminOnly?: boolean }[] = [
     items: [
       { href: "/brands", label: "Thương hiệu", icon: Palette },
       { href: "/members", label: "Thành viên", icon: Users },
+      { href: "/dashboard-banners", label: "Banner Dashboard", icon: GalleryHorizontal },
     ],
   },
   {
