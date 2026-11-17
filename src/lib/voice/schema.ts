@@ -33,6 +33,11 @@ export const saveVoiceAssetSchema = z.object({
 });
 export type SaveVoiceAssetInput = z.infer<typeof saveVoiceAssetSchema>;
 
+export const deleteVoiceGenerationJobSchema = z.object({
+  jobId: z.string().uuid(),
+});
+export type DeleteVoiceGenerationJobInput = z.infer<typeof deleteVoiceGenerationJobSchema>;
+
 /** Fallback-preview only (used when a voice has no Vbee `demoUrl`) — text
  * is always a short, capped excerpt/sample, never the user's full script,
  * and this never persists anything (see previewVoiceSampleAction). */
