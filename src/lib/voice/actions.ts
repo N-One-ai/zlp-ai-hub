@@ -6,7 +6,12 @@ import { ok, err, type ActionResult } from "@/lib/action-result";
 import { getActiveWorkspace } from "@/lib/workspace/queries";
 import { trackEvent } from "@/lib/analytics/track";
 import { buildCreativeAssetPath, uploadGeneratedImage, extensionForContentType } from "@/lib/generation/storage";
-import { createVoiceGenerationSchema, saveVoiceAssetSchema, previewVoiceSampleSchema } from "./schema";
+import {
+  createVoiceGenerationSchema,
+  saveVoiceAssetSchema,
+  previewVoiceSampleSchema,
+  deleteVoiceGenerationJobSchema,
+} from "./schema";
 import { getVoiceGenerationJob, listVoiceGenerationJobs } from "./queries";
 import {
   isVbeeConfigured,
@@ -317,6 +322,48 @@ export async function saveVoiceAssetAction(rawInput: unknown): Promise<ActionRes
   }
 
   return ok({ assetId: asset.id });
+}
+
+/** Deletes a row from the user's own voice-generation history list
+ * ("Danh sách voice đã tạo trước đó") — RLS ("own voice generation jobs
+ * delete") already scopes this to the caller's own rows, same pattern as
+ * deleteAsset (lib/library/actions.ts). If the job's audio was already
+ * registered as a creative_assets row via "Lưu vào thư viện", the
+ * underlying Storage file is intentionally LEFT ALONE (the library asset
+ * still points at it) — only an unsaved job's file is cleaned up, never
+ * the library asset itself. */
+export async function deleteVoiceGenerationJobAction(rawInput: unknown): Promise<ActionResult<null>> {
+  const parsed = deleteVoiceGenerationJobSchema.safeParse(rawInput);
+  if (!parsed.success) return err("VALIDATION_ERROR", parsed.error.issues[0]?.message ?? GENERIC_ERROR);
+  const { jobId } = parsed.data;
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return err("UNAUTHORIZED", "Bạn cần đăng nhập");
+
+  const { data: job } = await supabase.from("voice_generation_jobs").select("storage_path").eq("id", jobId).maybeSingle();
+
+  const { error, count } = await supabase.from("voice_generation_jobs").delete({ count: "exact" }).eq("id", jobId);
+  if (error) {
+    console.error("[deleteVoiceGenerationJobAction]", error);
+    return err("DB_ERROR", GENERIC_ERROR);
+  }
+  if (!count) return err("FORBIDDEN", "Bạn không có quyền xoá tác vụ này.");
+
+  if (job?.storage_path) {
+    const { data: savedAsset } = await supabase
+      .from("creative_assets")
+      .select("id")
+      .eq("storage_path", job.storage_path)
+      .maybeSingle();
+    if (!savedAsset) {
+      await supabase.storage.from("creative-assets").remove([job.storage_path]);
+    }
+  }
+
+  return ok(null);
 }
 
 /**

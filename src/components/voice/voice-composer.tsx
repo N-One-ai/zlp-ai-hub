@@ -1,13 +1,23 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Sparkles, Loader2, AlertTriangle, Download, Save, Check, Play, Pause, Volume2, History } from "lucide-react";
+import { Sparkles, Loader2, AlertTriangle, Download, Save, Check, Play, Pause, Volume2, History, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { BrandPicker } from "@/components/brand/brand-picker";
 import { CharCounter } from "@/components/generate/char-counter";
 import {
@@ -15,6 +25,7 @@ import {
   getVoiceGenerationStatusAction,
   saveVoiceAssetAction,
   previewVoiceSampleAction,
+  deleteVoiceGenerationJobAction,
 } from "@/lib/voice/actions";
 import {
   VBEE_SYNC_MAX_CHARS,
@@ -151,7 +162,38 @@ export function VoiceComposer({
   const [saving, setSaving] = useState(false);
   const [savingHistoryId, setSavingHistoryId] = useState<string | null>(null);
   const [history, setHistory] = useState<VoiceGenerationJob[]>(initialHistory);
+  const [expandedHistoryIds, setExpandedHistoryIds] = useState<Set<string>>(new Set());
+  const [deleteTarget, setDeleteTarget] = useState<VoiceGenerationJob | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const pollAttemptsRef = useRef(0);
+
+  function toggleHistoryExpanded(id: string) {
+    setExpandedHistoryIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function handleConfirmDelete() {
+    if (!deleteTarget || deletingId) return;
+    const target = deleteTarget;
+    setDeletingId(target.id);
+    try {
+      const result = await deleteVoiceGenerationJobAction({ jobId: target.id });
+      if (!result.ok) {
+        toast.error(result.error.message);
+        return;
+      }
+      setHistory((prev) => prev.filter((h) => h.id !== target.id));
+      if (job?.id === target.id) setJob(null);
+      setDeleteTarget(null);
+      toast.success("Đã xoá khỏi danh sách.");
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   // Keep the history list in sync with whatever the live job state becomes
   // (new job created, async job completes via polling, etc.) — upsert by
@@ -673,20 +715,30 @@ export function VoiceComposer({
           {history.length === 0 ? (
             <p className="text-sm text-muted-foreground">Chưa có audio nào được tạo.</p>
           ) : (
-            <ul className="flex flex-col gap-3">
+            <ul className="flex flex-col gap-2.5">
               {history.map((h) => {
                 const status = statusLabel(h.status);
+                const expanded = expandedHistoryIds.has(h.id);
+                const hasAudio = h.status === "succeeded" && !!h.audioUrl;
                 return (
-                  <li key={h.id} className="flex flex-col gap-2 rounded-lg border border-border p-3">
+                  <li key={h.id} className="flex flex-col gap-1.5 rounded-lg border border-border p-2.5 sm:p-3">
                     <div className="flex items-start justify-between gap-3">
-                      <div className="flex flex-col gap-0.5 min-w-0">
-                        <p className="text-sm font-medium truncate">{h.text}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {h.voiceName} · {formatHistoryDate(h.createdAt)}
-                        </p>
-                      </div>
+                      <button
+                        type="button"
+                        title={h.text}
+                        onClick={() => toggleHistoryExpanded(h.id)}
+                        className={`min-w-0 flex-1 text-left text-sm font-medium outline-none hover:text-foreground/80 focus-visible:underline ${
+                          expanded ? "whitespace-normal break-words" : "truncate"
+                        }`}
+                      >
+                        {h.text}
+                      </button>
                       <span className={`shrink-0 text-xs font-medium ${status.className}`}>{status.text}</span>
                     </div>
+
+                    <p className="text-xs text-muted-foreground">
+                      {h.voiceName} · {formatHistoryDate(h.createdAt)}
+                    </p>
 
                     {h.status === "processing" && (
                       <p className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -697,36 +749,66 @@ export function VoiceComposer({
 
                     {h.status === "failed" && <p className="text-xs text-destructive">{h.error || "Không rõ nguyên nhân."}</p>}
 
-                    {h.status === "succeeded" && h.audioUrl && (
-                      <div className="flex flex-col gap-2">
-                        <audio controls src={h.audioUrl} className="w-full h-9">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {hasAudio && (
+                        <audio controls src={h.audioUrl!} className="h-9 min-w-0 flex-1">
                           <track kind="captions" />
                         </audio>
-                        <div className="flex items-center gap-2">
-                          <Button type="button" variant="outline" size="sm" nativeButton={false} render={<a href={h.audioUrl} download />}>
+                      )}
+                      <div className="ml-auto flex shrink-0 items-center gap-1">
+                        {hasAudio && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon-sm"
+                            title="Tải xuống"
+                            aria-label="Tải xuống audio"
+                            nativeButton={false}
+                            render={<a href={h.audioUrl!} download />}
+                          >
                             <Download className="size-3.5" />
-                            Tải xuống
                           </Button>
-                          {h.savedAssetId ? (
-                            <span className="flex items-center gap-1 text-xs text-success">
+                        )}
+                        {hasAudio &&
+                          (h.savedAssetId ? (
+                            <span
+                              title="Đã lưu vào thư viện"
+                              aria-label="Đã lưu vào thư viện"
+                              className="flex size-9 shrink-0 items-center justify-center text-success"
+                            >
                               <Check className="size-3.5" />
-                              Đã lưu vào thư viện
                             </span>
                           ) : (
                             <Button
                               type="button"
                               variant="outline"
-                              size="sm"
+                              size="icon-sm"
+                              title="Lưu vào thư viện"
+                              aria-label="Lưu vào thư viện"
                               disabled={savingHistoryId === h.id}
                               onClick={() => handleHistorySave(h)}
                             >
-                              {savingHistoryId === h.id ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}
-                              Lưu vào thư viện
+                              {savingHistoryId === h.id ? (
+                                <Loader2 className="size-3.5 animate-spin" />
+                              ) : (
+                                <Save className="size-3.5" />
+                              )}
                             </Button>
-                          )}
-                        </div>
+                          ))}
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon-sm"
+                          title="Xoá"
+                          aria-label="Xoá audio này khỏi danh sách"
+                          disabled={deletingId === h.id}
+                          className="text-destructive hover:text-destructive"
+                          onClick={() => setDeleteTarget(h)}
+                        >
+                          {deletingId === h.id ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
+                        </Button>
                       </div>
-                    )}
+                    </div>
                   </li>
                 );
               })}
@@ -734,6 +816,26 @@ export function VoiceComposer({
           )}
         </CardContent>
       </Card>
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Xoá audio này khỏi danh sách?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteTarget ? `"${deleteTarget.text.slice(0, 80)}${deleteTarget.text.length > 80 ? "…" : ""}" (${deleteTarget.voiceName}).` : ""}{" "}
+              Hành động này không thể hoàn tác.
+              {deleteTarget?.savedAssetId ? " Audio đã lưu trong thư viện sẽ KHÔNG bị xoá." : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={!!deletingId}>Huỷ</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmDelete} disabled={!!deletingId}>
+              {deletingId ? <Loader2 className="size-3.5 animate-spin" /> : null}
+              Xoá
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
