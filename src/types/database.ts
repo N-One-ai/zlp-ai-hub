@@ -577,6 +577,63 @@ export interface Database {
         };
         Relationships: [];
       };
+      auth_gallery_images: {
+        Row: {
+          id: string;
+          image_path: string;
+          image_width: number | null;
+          image_height: number | null;
+          sort_order: number;
+          is_active: boolean;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          image_path: string;
+          image_width?: number | null;
+          image_height?: number | null;
+          sort_order?: number;
+          is_active?: boolean;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          image_path?: string;
+          image_width?: number | null;
+          image_height?: number | null;
+          sort_order?: number;
+          is_active?: boolean;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      auth_gallery_settings: {
+        Row: {
+          id: number;
+          is_enabled: boolean;
+          updated_by: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          id?: number;
+          is_enabled?: boolean;
+          updated_by?: string | null;
+          updated_at?: string;
+        };
+        Update: {
+          id?: number;
+          is_enabled?: boolean;
+          updated_by?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       dashboard_banners: {
         Row: {
           id: string;
