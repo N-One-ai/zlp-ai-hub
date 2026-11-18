@@ -18,9 +18,23 @@ function splitIntoRows(images: AuthGalleryImage[], rowCount: number): AuthGaller
   return rows.filter((row) => row.length >= 2);
 }
 
-function Tile({ image }: { image: AuthGalleryImage }) {
+// Cycled for any tile missing real width/height (e.g. an image copied in
+// from the Library, which has no probed dimensions) — picked to mirror
+// the reference screenshot's mix of portrait/square/landscape cards
+// rather than collapsing everything to a uniform square.
+const FALLBACK_RATIOS = [3 / 4, 1, 4 / 3, 2 / 3, 1, 3 / 2];
+
+function Tile({ image, fallbackIndex }: { image: AuthGalleryImage; fallbackIndex: number }) {
+  const ratio =
+    image.imageWidth && image.imageHeight
+      ? image.imageWidth / image.imageHeight
+      : FALLBACK_RATIOS[fallbackIndex % FALLBACK_RATIOS.length];
+
   return (
-    <div className="aspect-square h-full shrink-0 overflow-hidden rounded-xl ring-1 ring-border/40">
+    <div
+      className="h-full shrink-0 overflow-hidden rounded-xl ring-1 ring-border/50"
+      style={{ aspectRatio: ratio }}
+    >
       {/* eslint-disable-next-line @next/next/no-img-element -- admin-managed public URLs (Storage public bucket or static /auth/gallery asset) */}
       <img src={image.imageUrl} alt="" aria-hidden="true" className="size-full object-cover" loading="lazy" decoding="async" />
     </div>
@@ -40,7 +54,7 @@ function Row({ images, durationSeconds }: { images: AuthGalleryImage[]; duration
         {[0, 1].map((copy) => (
           <div key={copy} className="flex h-full shrink-0 items-stretch gap-4 pr-4">
             {images.map((image, i) => (
-              <Tile key={`${copy}-${i}`} image={image} />
+              <Tile key={`${copy}-${i}`} image={image} fallbackIndex={i} />
             ))}
           </div>
         ))}
@@ -88,7 +102,7 @@ export function AuthGallery({ images, className }: { images: AuthGalleryImage[];
       aria-hidden="true"
       className={cn("group/gallery overflow-hidden", className)}
     >
-      <div className="flex h-full flex-col justify-center gap-4 opacity-55 transition-opacity group-hover/gallery:opacity-80">
+      <div className="flex h-full flex-col justify-center gap-4 opacity-80 transition-opacity group-hover/gallery:opacity-100">
         {rows.map((row, i) => (
           // Mobile keeps only the first two rows — a shorter, lighter strip
           // that prioritizes the form, per spec ("giảm số hàng... trên mobile").

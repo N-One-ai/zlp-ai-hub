@@ -144,18 +144,23 @@ create trigger auth_gallery_settings_set_updated_at
 -- deterministic UUIDs keep this insert idempotent; an admin can delete  --
 -- or reorder any of these later like any other row.                    --
 -- ------------------------------------------------------------------ --
-insert into public.auth_gallery_images (id, image_path, sort_order, is_active)
+-- image_width/image_height are each tile's real intrinsic SVG size (see
+-- the generator script used to create them) — stored so the gallery
+-- renders these seed tiles at their own varied aspect ratio (matching
+-- the reference design's mixed portrait/square/landscape look) instead
+-- of falling back to a guessed ratio.
+insert into public.auth_gallery_images (id, image_path, image_width, image_height, sort_order, is_active)
 values
-  ('a7e5e3f0-0001-4a00-8000-000000000001', '/auth/gallery/tile-01.svg', 0, true),
-  ('a7e5e3f0-0001-4a00-8000-000000000002', '/auth/gallery/tile-02.svg', 1, true),
-  ('a7e5e3f0-0001-4a00-8000-000000000003', '/auth/gallery/tile-03.svg', 2, true),
-  ('a7e5e3f0-0001-4a00-8000-000000000004', '/auth/gallery/tile-04.svg', 3, true),
-  ('a7e5e3f0-0001-4a00-8000-000000000005', '/auth/gallery/tile-05.svg', 4, true),
-  ('a7e5e3f0-0001-4a00-8000-000000000006', '/auth/gallery/tile-06.svg', 5, true),
-  ('a7e5e3f0-0001-4a00-8000-000000000007', '/auth/gallery/tile-07.svg', 6, true),
-  ('a7e5e3f0-0001-4a00-8000-000000000008', '/auth/gallery/tile-08.svg', 7, true),
-  ('a7e5e3f0-0001-4a00-8000-000000000009', '/auth/gallery/tile-09.svg', 8, true),
-  ('a7e5e3f0-0001-4a00-8000-00000000000a', '/auth/gallery/tile-10.svg', 9, true),
-  ('a7e5e3f0-0001-4a00-8000-00000000000b', '/auth/gallery/tile-11.svg', 10, true),
-  ('a7e5e3f0-0001-4a00-8000-00000000000c', '/auth/gallery/tile-12.svg', 11, true)
+  ('a7e5e3f0-0001-4a00-8000-000000000001', '/auth/gallery/tile-01.svg', 360, 480, 0, true),
+  ('a7e5e3f0-0001-4a00-8000-000000000002', '/auth/gallery/tile-02.svg', 480, 360, 1, true),
+  ('a7e5e3f0-0001-4a00-8000-000000000003', '/auth/gallery/tile-03.svg', 360, 360, 2, true),
+  ('a7e5e3f0-0001-4a00-8000-000000000004', '/auth/gallery/tile-04.svg', 340, 460, 3, true),
+  ('a7e5e3f0-0001-4a00-8000-000000000005', '/auth/gallery/tile-05.svg', 420, 300, 4, true),
+  ('a7e5e3f0-0001-4a00-8000-000000000006', '/auth/gallery/tile-06.svg', 340, 340, 5, true),
+  ('a7e5e3f0-0001-4a00-8000-000000000007', '/auth/gallery/tile-07.svg', 360, 480, 6, true),
+  ('a7e5e3f0-0001-4a00-8000-000000000008', '/auth/gallery/tile-08.svg', 440, 330, 7, true),
+  ('a7e5e3f0-0001-4a00-8000-000000000009', '/auth/gallery/tile-09.svg', 340, 340, 8, true),
+  ('a7e5e3f0-0001-4a00-8000-00000000000a', '/auth/gallery/tile-10.svg', 320, 420, 9, true),
+  ('a7e5e3f0-0001-4a00-8000-00000000000b', '/auth/gallery/tile-11.svg', 460, 280, 10, true),
+  ('a7e5e3f0-0001-4a00-8000-00000000000c', '/auth/gallery/tile-12.svg', 340, 420, 11, true)
 on conflict (id) do nothing;
