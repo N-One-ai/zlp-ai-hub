@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Sparkles, Loader2, AlertTriangle, Download, Save, Check, Play, Pause, Volume2, History, Trash2 } from "lucide-react";
+import { Sparkles, Loader2, AlertTriangle, Download, Save, Check, Play, Pause, Volume2, History, Trash2, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -163,6 +163,7 @@ export function VoiceComposer({
   const [savingHistoryId, setSavingHistoryId] = useState<string | null>(null);
   const [history, setHistory] = useState<VoiceGenerationJob[]>(initialHistory);
   const [expandedHistoryIds, setExpandedHistoryIds] = useState<Set<string>>(new Set());
+  const [historyCollapsed, setHistoryCollapsed] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<VoiceGenerationJob | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const pollAttemptsRef = useRef(0);
@@ -705,12 +706,26 @@ export function VoiceComposer({
 
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <History className="size-4" />
-            Danh sách voice đã tạo trước đó
-          </CardTitle>
-          <CardDescription>Tối đa 20 lượt tạo audio gần nhất của bạn trong workspace này.</CardDescription>
+          <button
+            type="button"
+            onClick={() => setHistoryCollapsed((prev) => !prev)}
+            aria-expanded={!historyCollapsed}
+            className="flex w-full items-center justify-between gap-2 text-left outline-none"
+          >
+            <span className="flex flex-col gap-1.5">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <History className="size-4" />
+                Danh sách voice đã tạo
+              </CardTitle>
+              <CardDescription>Tối đa 20 lượt tạo audio gần nhất của bạn trong workspace này.</CardDescription>
+            </span>
+            <ChevronDown
+              className={`size-4 shrink-0 text-muted-foreground transition-transform ${historyCollapsed ? "" : "rotate-180"}`}
+              aria-hidden="true"
+            />
+          </button>
         </CardHeader>
+        {historyCollapsed ? null : (
         <CardContent>
           {history.length === 0 ? (
             <p className="text-sm text-muted-foreground">Chưa có audio nào được tạo.</p>
@@ -815,6 +830,7 @@ export function VoiceComposer({
             </ul>
           )}
         </CardContent>
+        )}
       </Card>
 
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
