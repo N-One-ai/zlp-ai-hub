@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Building2, ChevronRight, Palette, Users, GalleryHorizontal } from "lucide-react";
+import { Building2, ChevronRight, Palette, Users, GalleryHorizontal, Images } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -122,6 +122,19 @@ export default async function SettingsPage() {
               <span className="flex-1 min-w-0">
                 <span className="block text-sm font-medium">Banner Dashboard</span>
                 <span className="block text-xs text-muted-foreground">Quản lý carousel banner</span>
+              </span>
+              <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+            </Link>
+            <Link
+              href="/auth-gallery"
+              className="flex items-center gap-3 rounded-lg border border-border px-3.5 py-3 transition-colors hover:bg-accent"
+            >
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-icon bg-muted">
+                <Images className="size-4 text-muted-foreground" />
+              </span>
+              <span className="flex-1 min-w-0">
+                <span className="block text-sm font-medium">Gallery Đăng nhập/Đăng ký</span>
+                <span className="block text-xs text-muted-foreground">Dùng chung cho mọi workspace</span>
               </span>
               <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
             </Link>
