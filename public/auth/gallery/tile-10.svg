@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="420" viewBox="0 0 320 420">
+<defs><radialGradient id="g" cx="50%" cy="38%" r="75%"><stop offset="0%" stop-color="#301c1c" stop-opacity="1"/><stop offset="55%" stop-color="#141111" stop-opacity="1"/><stop offset="100%" stop-color="#0c0a0a" stop-opacity="1"/></radialGradient></defs>
+<rect width="320" height="420" rx="18" fill="#141111"/>
+<rect width="320" height="420" rx="18" fill="url(#g)"/>
+
+      <circle cx="160" cy="130" r="54" fill="#e3b7a0" fill-opacity="0.92"/>
+      <path d="M90 420 L100 260q10-40 60-40t60 40l10 160z" fill="#c2543f" fill-opacity="0.9"/>
+      <circle cx="140" cy="130" r="6" fill="#141111"/>
+      <circle cx="180" cy="130" r="6" fill="#141111"/>
+    
+<rect x="0.5" y="0.5" width="319" height="419" rx="17.5" fill="none" stroke="#ffffff" stroke-opacity="0.08"/>
+</svg>

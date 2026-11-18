@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="340" height="340" viewBox="0 0 340 340">
+<defs><radialGradient id="g" cx="50%" cy="38%" r="75%"><stop offset="0%" stop-color="#2a1a36" stop-opacity="1"/><stop offset="55%" stop-color="#120f16" stop-opacity="1"/><stop offset="100%" stop-color="#0a080c" stop-opacity="1"/></radialGradient></defs>
+<rect width="340" height="340" rx="18" fill="#120f16"/>
+<rect width="340" height="340" rx="18" fill="url(#g)"/>
+
+      <polygon points="170,60 240,140 200,280 140,280 100,140" fill="#c27bd6" fill-opacity="0.85"/>
+      <polygon points="170,60 240,140 170,170" fill="#e0a8ec" fill-opacity="0.9"/>
+      <polygon points="170,60 100,140 170,170" fill="#a85cc2" fill-opacity="0.9"/>
+      <polygon points="100,140 140,280 170,170" fill="#8c3fae" fill-opacity="0.9"/>
+      <polygon points="240,140 200,280 170,170" fill="#b566cc" fill-opacity="0.9"/>
+    
+<rect x="0.5" y="0.5" width="339" height="339" rx="17.5" fill="none" stroke="#ffffff" stroke-opacity="0.08"/>
+</svg>

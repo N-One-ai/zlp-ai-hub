@@ -294,3 +294,12 @@
     -webkit-text-stroke: 1px var(--foreground);
   }
 }
+
+/* /register background gallery (components/auth/auth-gallery.tsx) — each
+ * row reuses the `.animate-marquee` keyframes in reverse (left-to-right).
+ * Toggled from a single `visibilitychange` listener on the gallery root
+ * rather than per-row JS, so a hidden tab stops every row's animation at
+ * once without any per-frame state updates. */
+.auth-gallery-paused .marquee-row {
+  animation-play-state: paused;
+}
