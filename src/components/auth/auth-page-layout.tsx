@@ -13,9 +13,10 @@ import { AuthGallery } from "./auth-gallery";
  * the form up" so the gallery band at the bottom is always fully
  * visible, never cropped or covered. Gallery height is a chunk of the
  * viewport height on larger screens (≈40-45%, per spec) and a smaller,
- * fixed-minimum chunk on mobile, where it also drops to 2 rows (handled
- * inside AuthGallery itself) to avoid pushing the page into a long
- * scroll.
+ * fixed-minimum chunk on mobile, where the tile-to-tile vertical stagger
+ * is also scaled down (handled inside AuthGallery itself via a CSS
+ * custom property) to avoid clipping or an overly busy strip on a short
+ * viewport.
  */
 export async function AuthPageLayout({ children }: { children: React.ReactNode }) {
   const [images, settings] = await Promise.all([getActiveAuthGalleryImages(), getAuthGallerySettings()]);
