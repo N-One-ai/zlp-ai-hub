@@ -37,17 +37,17 @@ function mulberry32(seed: number) {
 }
 
 /** Card shapes a tile can take, as a height (percentage of the row's
- * full height) and a CSS `aspect-ratio` (width / height) — width is
- * derived from these two, never set directly, so every tile stays a
- * clean, undistorted crop regardless of shape. Weighted so most tiles
- * are square/portrait like the reference, with landscape/wide ones
- * mixed in more sparingly. */
+ * full height), a CSS `aspect-ratio` string (width / height) and that
+ * same ratio as a number — width is derived from these, never set
+ * directly, so every tile stays a clean, undistorted crop regardless of
+ * shape. Weighted so most tiles are square/portrait like the reference,
+ * with landscape/wide ones mixed in more sparingly. */
 const SHAPES = [
-  { key: "square", heightPct: 44, aspect: "1 / 1", weight: 5 },
-  { key: "portrait", heightPct: 58, aspect: "3 / 4", weight: 4 },
-  { key: "tall", heightPct: 70, aspect: "2 / 3", weight: 2 },
-  { key: "landscape", heightPct: 36, aspect: "4 / 3", weight: 2 },
-  { key: "wide", heightPct: 30, aspect: "16 / 9", weight: 1 },
+  { key: "square", heightPct: 44, aspect: "1 / 1", ratio: 1, weight: 5 },
+  { key: "portrait", heightPct: 58, aspect: "3 / 4", ratio: 3 / 4, weight: 4 },
+  { key: "tall", heightPct: 70, aspect: "2 / 3", ratio: 2 / 3, weight: 2 },
+  { key: "landscape", heightPct: 36, aspect: "4 / 3", ratio: 4 / 3, weight: 2 },
+  { key: "wide", heightPct: 30, aspect: "16 / 9", ratio: 16 / 9, weight: 1 },
 ] as const;
 
 const TOTAL_SHAPE_WEIGHT = SHAPES.reduce((sum, s) => sum + s.weight, 0);
@@ -66,6 +66,27 @@ function pickShape(random: () => number, avoidKey: string | null) {
     }
   }
   return SHAPES[0];
+}
+
+/** When the image's own dimensions are known, pick the shape whose
+ * aspect ratio is closest to the image's actual aspect ratio instead of
+ * a blind weighted pick. This matters most for small icon-style
+ * artwork centered on a mostly-empty canvas (the original seed tiles):
+ * forcing one of those into a very different aspect ratio crops the
+ * actual illustration out of frame, leaving only its plain background
+ * visible — which reads as an empty tile even though it technically has
+ * an image in it. A real uploaded photo (no stored dimensions yet, or
+ * one that fills its frame edge-to-edge) falls back to the ordinary
+ * weighted-random pick, where any crop still shows real content. */
+function pickShapeForImage(image: AuthGalleryImage, random: () => number, avoidKey: string | null) {
+  if (!image.imageWidth || !image.imageHeight) return pickShape(random, avoidKey);
+
+  const nativeRatio = image.imageWidth / image.imageHeight;
+  const ranked = [...SHAPES].sort(
+    (a, b) => Math.abs(Math.log(a.ratio / nativeRatio)) - Math.abs(Math.log(b.ratio / nativeRatio)),
+  );
+  if (ranked[0].key !== avoidKey) return ranked[0];
+  return ranked.find((shape) => shape.key !== avoidKey) ?? ranked[0];
 }
 
 type TileLayout = {
@@ -94,7 +115,8 @@ function buildTileLayout(images: AuthGalleryImage[]): TileLayout[] {
   let runLength = 0;
 
   for (let i = 0; i < MIN_TILES; i++) {
-    const shape = pickShape(random, runLength >= 2 ? runKey : null);
+    const image = flat[i % flat.length];
+    const shape = pickShapeForImage(image, random, runLength >= 2 ? runKey : null);
     if (shape.key === runKey) {
       runLength++;
     } else {
@@ -111,7 +133,7 @@ function buildTileLayout(images: AuthGalleryImage[]): TileLayout[] {
 
     const gapPx = 14 + Math.round(random() * 22); // ~14-36px, varies tile-to-tile
 
-    layout.push({ image: flat[i % flat.length], shape, offsetFraction, gapPx });
+    layout.push({ image, shape, offsetFraction, gapPx });
   }
 
   return layout;
@@ -163,7 +185,13 @@ function GalleryTile({ layout }: { layout: TileLayout }) {
  * sequence rather than a repeating cycle or a uniform grid — this is
  * "ngẫu nhiên có kiểm soát": random-looking, but computed once from a
  * fixed seed off the `images` prop so the layout never jitters on a
- * re-render. Real photos only — every tile renders the admin's actual
+ * re-render. Shape assignment prefers whichever option is closest to the
+ * image's own stored aspect ratio (pickShapeForImage) rather than a pure
+ * blind pick — a small icon-style illustration on a mostly-empty canvas
+ * forced into a very different aspect ratio can get `object-cover`-
+ * cropped down to just its plain background, which reads as an empty
+ * tile even though an image is technically there. Real photos only —
+ * every tile renders the admin's actual
  * `imageUrl`, never a drawn shape/icon in its place. Images are NOT
  * lazy-loaded: every tile is "above the fold" from the first frame by
  * construction (buildTileLayout pre-fills the whole width), so lazy-
