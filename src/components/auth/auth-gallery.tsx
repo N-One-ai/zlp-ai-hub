@@ -112,11 +112,14 @@ function pickHeightPct(random: () => number) {
 }
 
 // Both tiles in a double column are this height (% of row height),
-// stacked with a small fixed gap. Sized ~20% larger than the original
-// 38 per explicit request — the pair's total height (2x this + the
-// stack gap) still clears MAX_HEIGHT_PCT comfortably, so it's still
-// never the tallest thing in the band.
-const DOUBLE_TILE_HEIGHT_PCT = 45.6;
+// stacked with a small fixed gap. Sized up twice per explicit request
+// (38 -> 45.6 -> 50.16, i.e. +20% then +10% more). At this size the
+// pair's total stacked height slightly exceeds the band's own height —
+// the top tile clips a few px against the band's `overflow-hidden`,
+// the same "clip cleanly rather than overflow the page" behavior
+// already accepted for tall content elsewhere in this layout, rather
+// than shrinking the tiles back down.
+const DOUBLE_TILE_HEIGHT_PCT = 50.16;
 
 type SingleColumn = { type: "single"; image: AuthGalleryImage; aspect: (typeof ASPECTS)[number]; heightPct: number };
 type DoubleColumn = { type: "double"; images: [AuthGalleryImage, AuthGalleryImage]; heightPct: number };
