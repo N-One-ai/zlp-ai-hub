@@ -2,9 +2,19 @@
 
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowUp, ArrowDown, Trash2, Upload, Images, Loader2, GalleryHorizontal, ImageIcon } from "lucide-react";
+import {
+  ArrowUp,
+  ArrowDown,
+  Trash2,
+  Upload,
+  Images,
+  Loader2,
+  GalleryHorizontal,
+  ImageIcon,
+  Pencil,
+} from "lucide-react";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
@@ -13,6 +23,12 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,6 +45,8 @@ import {
   discardAuthGalleryImage,
   addAuthGalleryImageFromUpload,
   addAuthGalleryImageFromAsset,
+  replaceAuthGalleryImageFromUpload,
+  replaceAuthGalleryImageFromAsset,
   toggleAuthGalleryImageActive,
   reorderAuthGalleryImages,
   deleteAuthGalleryImage,
@@ -44,11 +62,16 @@ function LibraryPickerDialog({
   onOpenChange,
   libraryAssets,
   onPicked,
+  replaceId,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   libraryAssets: LibraryAssetListItem[];
   onPicked: () => void;
+  /** When set, picking an asset REPLACES this row's image in place
+   * (same id/position) instead of inserting a new row at the end — the
+   * per-row "chỉnh sửa ngay tại vị trí" flow. */
+  replaceId?: string;
 }) {
   const router = useRouter();
   const [pickingId, setPickingId] = useState<string | null>(null);
@@ -56,13 +79,15 @@ function LibraryPickerDialog({
   function handlePick(assetId: string) {
     setPickingId(assetId);
     void (async () => {
-      const result = await addAuthGalleryImageFromAsset({ assetId });
+      const result = replaceId
+        ? await replaceAuthGalleryImageFromAsset({ id: replaceId, assetId })
+        : await addAuthGalleryImageFromAsset({ assetId });
       setPickingId(null);
       if (!result.ok) {
         toast.error(result.error.message);
         return;
       }
-      toast.success("Đã thêm ảnh từ thư viện vào gallery.");
+      toast.success(replaceId ? "Đã thay ảnh từ thư viện." : "Đã thêm ảnh từ thư viện vào gallery.");
       onPicked();
       router.refresh();
     })();
@@ -72,7 +97,7 @@ function LibraryPickerDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Chọn ảnh từ thư viện</DialogTitle>
+          <DialogTitle>{replaceId ? "Chọn ảnh thay thế từ thư viện" : "Chọn ảnh từ thư viện"}</DialogTitle>
           <DialogDescription>Ảnh được sao chép vào gallery công khai — ảnh gốc trong thư viện không đổi.</DialogDescription>
         </DialogHeader>
         {libraryAssets.length === 0 ? (
@@ -126,10 +151,34 @@ export function AuthGalleryManager({
   const [pickerOpen, setPickerOpen] = useState(false);
   const [deletingImage, setDeletingImage] = useState<AuthGalleryImageAdmin | null>(null);
   const [enabledOptimistic, setEnabledOptimistic] = useState(isEnabled);
+  // Set right before opening the hidden file input or the library picker
+  // from a ROW's own "chỉnh sửa" menu — tells handleFileChange / the
+  // picker dialog to REPLACE that row's image instead of adding a new
+  // one. Cleared before the top-level "Tải ảnh lên" / "Chọn từ thư viện"
+  // buttons open the same input/dialog, so those always add.
+  const [editingImage, setEditingImage] = useState<AuthGalleryImageAdmin | null>(null);
+  // Client-side fallback for "kèm thông tin kích thước" on rows whose
+  // stored image_width/image_height is null (e.g. added via "Chọn từ thư
+  // viện", which doesn't read dimensions) — read from the already-
+  // rendered <img> once it loads, so every row still shows a size
+  // without needing a DB backfill.
+  const [measuredDims, setMeasuredDims] = useState<Record<string, { width: number; height: number }>>({});
+
+  function handleAddUploadClick() {
+    setEditingImage(null);
+    fileInputRef.current?.click();
+  }
+
+  function handleRowUploadClick(image: AuthGalleryImageAdmin) {
+    setEditingImage(image);
+    fileInputRef.current?.click();
+  }
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
+    const replaceTarget = editingImage;
     e.target.value = "";
+    setEditingImage(null);
     if (!file) return;
     if (!AUTH_GALLERY_ALLOWED_TYPES.includes(file.type)) {
       toast.error("Định dạng không hỗ trợ. Dùng PNG, JPG hoặc WEBP.");
@@ -148,17 +197,24 @@ export function AuthGalleryManager({
         toast.error(uploadResult.error.message);
         return;
       }
-      const addResult = await addAuthGalleryImageFromUpload({
-        imagePath: uploadResult.data.path,
-        imageWidth: dimensions?.width ?? null,
-        imageHeight: dimensions?.height ?? null,
-      });
-      if (!addResult.ok) {
+      const result = replaceTarget
+        ? await replaceAuthGalleryImageFromUpload({
+            id: replaceTarget.id,
+            imagePath: uploadResult.data.path,
+            imageWidth: dimensions?.width ?? null,
+            imageHeight: dimensions?.height ?? null,
+          })
+        : await addAuthGalleryImageFromUpload({
+            imagePath: uploadResult.data.path,
+            imageWidth: dimensions?.width ?? null,
+            imageHeight: dimensions?.height ?? null,
+          });
+      if (!result.ok) {
         await discardAuthGalleryImage(uploadResult.data.path);
-        toast.error(addResult.error.message);
+        toast.error(result.error.message);
         return;
       }
-      toast.success("Đã thêm ảnh vào gallery.");
+      toast.success(replaceTarget ? "Đã thay ảnh." : "Đã thêm ảnh vào gallery.");
       router.refresh();
     } finally {
       setUploading(false);
@@ -243,11 +299,18 @@ export function AuthGalleryManager({
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <Button type="button" disabled={uploading} onClick={() => fileInputRef.current?.click()}>
+        <Button type="button" disabled={uploading} onClick={handleAddUploadClick}>
           {uploading ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
           Tải ảnh lên
         </Button>
-        <Button type="button" variant="outline" onClick={() => setPickerOpen(true)}>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => {
+            setEditingImage(null);
+            setPickerOpen(true);
+          }}
+        >
           <Images className="size-4" />
           Chọn từ thư viện
         </Button>
@@ -291,18 +354,37 @@ export function AuthGalleryManager({
                 </button>
               </div>
 
-              <span className="size-14 shrink-0 overflow-hidden rounded-md bg-muted/40">
+              <span className="relative size-14 shrink-0 overflow-hidden rounded-md bg-muted/40">
                 {/* eslint-disable-next-line @next/next/no-img-element -- public bucket URL, no optimization needed */}
-                <img src={image.imageUrl} alt="" className="size-full object-cover" />
+                <img
+                  src={image.imageUrl}
+                  alt=""
+                  className="size-full object-cover"
+                  onLoad={(e) => {
+                    if (image.imageWidth && image.imageHeight) return;
+                    const el = e.currentTarget;
+                    setMeasuredDims((prev) =>
+                      prev[image.id] ? prev : { ...prev, [image.id]: { width: el.naturalWidth, height: el.naturalHeight } }
+                    );
+                  }}
+                />
               </span>
 
               <div className="min-w-0 flex-1">
                 <p className="text-xs text-muted-foreground">Vị trí {index + 1}</p>
-                {image.imageWidth && image.imageHeight && (
-                  <p className="text-[11px] text-muted-foreground tabular-nums">
-                    {image.imageWidth}×{image.imageHeight} px
-                  </p>
-                )}
+                {(() => {
+                  const dims =
+                    image.imageWidth && image.imageHeight
+                      ? { width: image.imageWidth, height: image.imageHeight }
+                      : measuredDims[image.id];
+                  return (
+                    dims && (
+                      <p className="text-[11px] text-muted-foreground tabular-nums">
+                        {dims.width}×{dims.height} px
+                      </p>
+                    )
+                  );
+                })()}
               </div>
 
               <label className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
@@ -314,6 +396,31 @@ export function AuthGalleryManager({
                 Đang bật
               </label>
 
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  aria-label="Chỉnh sửa ảnh"
+                  disabled={uploading}
+                  className={buttonVariants({ size: "icon-sm", variant: "ghost" })}
+                >
+                  <Pencil className="size-3.5" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => handleRowUploadClick(image)}>
+                    <Upload className="size-3.5" />
+                    Tải ảnh mới lên
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setEditingImage(image);
+                      setPickerOpen(true);
+                    }}
+                  >
+                    <Images className="size-3.5" />
+                    Chọn từ thư viện
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
               <Button size="icon-sm" variant="ghost" aria-label="Xoá" onClick={() => setDeletingImage(image)}>
                 <Trash2 className="size-3.5 text-destructive" />
               </Button>
@@ -324,9 +431,16 @@ export function AuthGalleryManager({
 
       <LibraryPickerDialog
         open={pickerOpen}
-        onOpenChange={setPickerOpen}
+        onOpenChange={(open) => {
+          setPickerOpen(open);
+          if (!open) setEditingImage(null);
+        }}
         libraryAssets={libraryAssets}
-        onPicked={() => setPickerOpen(false)}
+        onPicked={() => {
+          setPickerOpen(false);
+          setEditingImage(null);
+        }}
+        replaceId={editingImage?.id}
       />
 
       <AlertDialog open={deletingImage !== null} onOpenChange={(open) => !open && setDeletingImage(null)}>

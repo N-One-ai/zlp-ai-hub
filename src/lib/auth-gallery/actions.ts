@@ -7,6 +7,8 @@ import {
   addAuthGalleryImageFromUploadSchema,
   addAuthGalleryImageFromAssetSchema,
   reorderAuthGalleryImagesSchema,
+  replaceAuthGalleryImageFromUploadSchema,
+  replaceAuthGalleryImageFromAssetSchema,
 } from "./schema";
 import {
   buildAuthGalleryPath,
@@ -178,6 +180,109 @@ export async function addAuthGalleryImageFromAsset(rawInput: unknown): Promise<A
 
   revalidateAuthGallery();
   return ok({ id: data.id });
+}
+
+/** Swaps the image at an existing row (upload variant) — keeps the
+ * row's id/sort_order/is_active, only its image changes. This is the
+ * per-row "chỉnh sửa/upload ảnh ngay tại vị trí mỗi ảnh" affordance,
+ * distinct from addAuthGalleryImageFromUpload which always inserts a
+ * new row at the end. Best-effort deletes the row's OLD Storage object
+ * after the swap succeeds — mirrors deleteAuthGalleryImage's own "skip
+ * seeded '/'-prefixed paths" rule, since those have no Storage object. */
+export async function replaceAuthGalleryImageFromUpload(rawInput: unknown): Promise<ActionResult<null>> {
+  const supabase = await createClient();
+  const forbidden = await assertPlatformAdmin(supabase);
+  if (forbidden) return forbidden;
+
+  const parsed = replaceAuthGalleryImageFromUploadSchema.safeParse(rawInput);
+  if (!parsed.success) return err("VALIDATION_ERROR", GENERIC_ERROR);
+
+  const { data: existing, error: fetchError } = await supabase
+    .from("auth_gallery_images")
+    .select("image_path")
+    .eq("id", parsed.data.id)
+    .maybeSingle();
+  if (fetchError || !existing) return err("NOT_FOUND", "Không tìm thấy ảnh.");
+
+  const { error, count } = await supabase
+    .from("auth_gallery_images")
+    .update(
+      {
+        image_path: parsed.data.imagePath,
+        image_width: parsed.data.imageWidth,
+        image_height: parsed.data.imageHeight,
+      },
+      { count: "exact" }
+    )
+    .eq("id", parsed.data.id);
+
+  if (error) {
+    console.error("[replaceAuthGalleryImageFromUpload]", error);
+    return err("UNKNOWN", GENERIC_ERROR);
+  }
+  if (!count) return err("FORBIDDEN", FORBIDDEN_MESSAGE);
+
+  if (!existing.image_path.startsWith("/")) {
+    await deleteAuthGalleryAsset(supabase, existing.image_path);
+  }
+
+  revalidateAuthGallery();
+  return ok(null);
+}
+
+/** Same as replaceAuthGalleryImageFromUpload, but sourcing the
+ * replacement from the asset library ("Chọn từ thư viện") instead of a
+ * direct file upload. */
+export async function replaceAuthGalleryImageFromAsset(rawInput: unknown): Promise<ActionResult<null>> {
+  const supabase = await createClient();
+  const forbidden = await assertPlatformAdmin(supabase);
+  if (forbidden) return forbidden;
+
+  const parsed = replaceAuthGalleryImageFromAssetSchema.safeParse(rawInput);
+  if (!parsed.success) return err("VALIDATION_ERROR", GENERIC_ERROR);
+
+  const { data: existing, error: fetchError } = await supabase
+    .from("auth_gallery_images")
+    .select("image_path")
+    .eq("id", parsed.data.id)
+    .maybeSingle();
+  if (fetchError || !existing) return err("NOT_FOUND", "Không tìm thấy ảnh.");
+
+  const { data: asset, error: assetError } = await supabase
+    .from("creative_assets")
+    .select("storage_path, type")
+    .eq("id", parsed.data.assetId)
+    .maybeSingle();
+
+  if (assetError || !asset || !asset.storage_path) {
+    return err("NOT_FOUND", "Không tìm thấy ảnh trong thư viện.");
+  }
+  if (asset.type !== "image" && asset.type !== "banner") {
+    return err("VALIDATION_ERROR", "Chỉ có thể chọn ảnh từ thư viện.");
+  }
+
+  const copyResult = await copyFromCreativeAssets(supabase, asset.storage_path);
+  if ("error" in copyResult) {
+    return err("UPLOAD_FAILED", copyResult.error || "Không sao chép được ảnh từ thư viện.");
+  }
+
+  const { error, count } = await supabase
+    .from("auth_gallery_images")
+    .update({ image_path: copyResult.path, image_width: null, image_height: null }, { count: "exact" })
+    .eq("id", parsed.data.id);
+
+  if (error) {
+    console.error("[replaceAuthGalleryImageFromAsset]", error);
+    return err("UNKNOWN", GENERIC_ERROR);
+  }
+  if (!count) return err("FORBIDDEN", FORBIDDEN_MESSAGE);
+
+  if (!existing.image_path.startsWith("/")) {
+    await deleteAuthGalleryAsset(supabase, existing.image_path);
+  }
+
+  revalidateAuthGallery();
+  return ok(null);
 }
 
 export async function toggleAuthGalleryImageActive(id: string, next: boolean): Promise<ActionResult<null>> {
