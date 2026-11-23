@@ -4,13 +4,9 @@ import { useEffect, useMemo, useRef } from "react";
 import { cn } from "@/lib/utils";
 import type { AuthGalleryImage } from "@/types/auth-gallery";
 
-// Halved speed vs. the previous single-track version (28s -> 56s): same
+// Halved speed vs. the original single-track version (28s -> 56s): same
 // distance per loop, twice the duration, i.e. half the px/s.
 const DURATION_SECONDS = 56;
-
-// 1 image, then 2 stacked, then 1, then 2, ... — the "1-2-1-2" rhythm.
-// A slot's length is how many images it consumes from the flat list.
-const CLUSTER_PATTERN = [1, 2];
 
 // Generous enough to overflow any realistic viewport width (including
 // ultra-wide desktop monitors) from the very first frame, same reasoning
@@ -25,42 +21,72 @@ const MIN_SLOTS = 20;
 // thước vuông" regardless of slot type.
 const TILE_HEIGHT_PCT = 40;
 
-// Per-slot vertical offset, as a fraction of the SLOT WRAPPER's own
-// height (the wrapper is always h-full, i.e. the row's full height, for
-// both 1-tile and 2-tile slots) — cycled across slots for the "cao thấp
-// xen kẽ" rhythm. A 1-tile slot's content (40% of row, centered) has
-// ±30% headroom either side; a 2-tile slot's content (2×40% + a small
-// gap, roughly 85-90% of row) has much less headroom, so some clipping
-// at the top/bottom of the gallery band is expected for tall 2-slots —
-// handled by the existing `overflow-hidden` on the gallery root, per the
-// explicit "xử lý bằng clipping/mask gọn gàng" instruction rather than
-// shrinking the tiles themselves.
-const OFFSET_PATTERN = [0, 0.16, -0.12, 0.1, -0.16, 0.08];
+// Fixed seed (never Math.random()) so the "random-looking" 1-vs-2
+// sequence below is identical on the server-rendered HTML and the
+// client hydration pass — a real random source here would cause a
+// hydration mismatch, since this component's initial render has no
+// user interaction to justify differing from the server.
+const PATTERN_SEED = 20260207;
 
-/** Splits the admin's (possibly short) image list into 1-2-1-2 slots,
- * repeating the source list as needed so there are always at least
- * MIN_SLOTS slots — enough to tile densely past any realistic viewport
- * width on the very first frame. */
+function mulberry32(seed: number) {
+  let t = seed;
+  return function random() {
+    t = (t + 0x6d2b79f5) | 0;
+    let r = Math.imul(t ^ (t >>> 15), 1 | t);
+    r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r;
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Deterministic, irregular sequence of slot sizes (1 or 2 images per
+ * slot) — mostly single tiles with doubled tiles mixed in at random
+ * (not a repeating 1-2-1-2 cycle), matching the reference's uneven
+ * "skyline" look. Allows up to 2 of the same size back-to-back (so the
+ * sequence still looks organic, not strictly alternating) but forbids a
+ * 3rd in a row, so it never goes flat for too long either. */
+function buildSlotPattern(length: number): number[] {
+  const random = mulberry32(PATTERN_SEED);
+  const pattern: number[] = [];
+  let prev = 0;
+  let runLength = 0;
+  for (let i = 0; i < length; i++) {
+    let count = random() < 0.65 ? 1 : 2;
+    if (count === prev) {
+      runLength++;
+      if (runLength > 2) {
+        count = prev === 1 ? 2 : 1;
+        runLength = 1;
+      }
+    } else {
+      runLength = 1;
+    }
+    prev = count;
+    pattern.push(count);
+  }
+  return pattern;
+}
+
+/** Splits the admin's (possibly short) image list into slots sized per
+ * buildSlotPattern, repeating the source list as needed so there are
+ * always at least MIN_SLOTS slots — enough to tile densely past any
+ * realistic viewport width on the very first frame. */
 function buildClusterSlots(images: AuthGalleryImage[]): AuthGalleryImage[][] {
   if (images.length === 0) return [];
 
-  const avgImagesPerSlot = CLUSTER_PATTERN.reduce((sum, n) => sum + n, 0) / CLUSTER_PATTERN.length;
-  const neededImages = Math.ceil(MIN_SLOTS * avgImagesPerSlot);
+  const pattern = buildSlotPattern(MIN_SLOTS);
+  const neededImages = pattern.reduce((sum, n) => sum + n, 0);
   const repeats = Math.ceil(neededImages / images.length);
   const flat = Array.from({ length: repeats }, () => images).flat();
 
   const slots: AuthGalleryImage[][] = [];
   let cursor = 0;
-  let patternIndex = 0;
-  while (slots.length < MIN_SLOTS) {
-    const count = CLUSTER_PATTERN[patternIndex % CLUSTER_PATTERN.length];
+  for (const count of pattern) {
     const slotImages: AuthGalleryImage[] = [];
     for (let k = 0; k < count; k++) {
       slotImages.push(flat[cursor % flat.length]);
       cursor++;
     }
     slots.push(slotImages);
-    patternIndex++;
   }
   return slots;
 }
@@ -74,26 +100,23 @@ function SquareTile({ image }: { image: AuthGalleryImage }) {
   );
 }
 
-/** One slot of the 1-2-1-2 pattern: a single square tile, or two square
- * tiles stacked vertically (same tile size as a single slot). The whole
- * slot wrapper carries the vertical offset, so a stacked pair moves as
- * one rhythmic unit rather than each tile offsetting independently. */
-function Slot({ images, offsetIndex }: { images: AuthGalleryImage[]; offsetIndex: number }) {
-  const offsetFraction = OFFSET_PATTERN[offsetIndex % OFFSET_PATTERN.length];
-  const style = {
-    transform: `translateY(calc(${offsetFraction} * var(--stagger-scale, 1) * 100%))`,
-  };
-
+/** One slot: a single square tile, or two square tiles stacked
+ * vertically (same tile size as a single slot). The slot is always the
+ * row's full height with its content pushed to the BOTTOM
+ * (`justify-end`) — so a 1-tile slot sits flush with the bottom of a
+ * neighboring 2-tile slot, exactly like blocks resting on a shared
+ * baseline, rather than both being vertically centered. */
+function Slot({ images }: { images: AuthGalleryImage[] }) {
   if (images.length === 1) {
     return (
-      <div className="flex h-full shrink-0 items-center justify-center" style={style}>
+      <div className="flex h-full shrink-0 flex-col items-center justify-end">
         <SquareTile image={images[0]} />
       </div>
     );
   }
 
   return (
-    <div className="flex h-full shrink-0 flex-col items-center justify-center gap-3" style={style}>
+    <div className="flex h-full shrink-0 flex-col items-center justify-end gap-3">
       {images.map((image, i) => (
         <SquareTile key={i} image={image} />
       ))}
@@ -115,18 +138,20 @@ function Slot({ images, offsetIndex }: { images: AuthGalleryImage[]; offsetIndex
  * is already handled globally in globals.css (collapses every animation
  * to a single frame), so no separate reduced-motion branch is needed here.
  *
- * Slots follow a 1-2-1-2 rhythm (CLUSTER_PATTERN): every other slot is a
- * single square tile, the ones in between are two square tiles stacked
- * vertically — all tiles the same size, rounded, with a thin stroke.
- * Each slot (not each tile) carries its own vertical offset for the
- * alternating high/low cadence. Images are NOT lazy-loaded: every tile
- * is "above the fold" from the first frame by construction
- * (buildClusterSlots pre-fills the whole width), so lazy-loading them
- * would just mean a visible pop-in instead of starting fully populated —
- * the explicit requirement that the gallery never starts empty. Tile
- * layout size comes entirely from CSS (percentage height + aspect-
- * square), never from the image's own intrinsic size, so there's no
- * layout shift as each `<img>` finishes loading.
+ * Slots are either a single square tile or two stacked vertically, in a
+ * deterministic-but-irregular sequence (buildSlotPattern) rather than a
+ * strict alternating cycle, and every slot's content sits flush with the
+ * bottom of the band — a 1-tile slot is exactly as "low" as the bottom
+ * tile of a neighboring 2-tile slot, producing the uneven skyline from
+ * the reference instead of a row of vertically-centered tiles. Images
+ * are NOT lazy-loaded: every tile is "above the fold" from the first
+ * frame by construction (buildClusterSlots pre-fills the whole width),
+ * so lazy-loading them would just mean a visible pop-in instead of
+ * starting fully populated — the explicit requirement that the gallery
+ * never starts empty. Tile layout size comes entirely from CSS
+ * (percentage height + aspect-square), never from the image's own
+ * intrinsic size, so there's no layout shift as each `<img>` finishes
+ * loading.
  */
 export function AuthGallery({ images, className }: { images: AuthGalleryImage[]; className?: string }) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -146,11 +171,7 @@ export function AuthGallery({ images, className }: { images: AuthGalleryImage[];
   if (slots.length === 0) return null;
 
   return (
-    <div
-      ref={rootRef}
-      aria-hidden="true"
-      className={cn("group/gallery overflow-hidden max-sm:[--stagger-scale:0.55]", className)}
-    >
+    <div ref={rootRef} aria-hidden="true" className={cn("group/gallery overflow-hidden", className)}>
       <div className="h-full overflow-hidden opacity-80 transition-opacity group-hover/gallery:opacity-100">
         {/* Two copies back-to-back, animated exactly -50% -> 0% so the loop
          * point is invisible — same technique as dashboard-marquee.tsx, just
@@ -159,13 +180,13 @@ export function AuthGallery({ images, className }: { images: AuthGalleryImage[];
          * (buildClusterSlots), so the very first frame is already a
          * completely filled band, not an empty one animating into view. */}
         <div
-          className="marquee-row flex h-full w-max items-center gap-5 animate-marquee [animation-direction:reverse] group-hover/gallery:[animation-play-state:paused]"
+          className="marquee-row flex h-full w-max items-end gap-5 animate-marquee [animation-direction:reverse] group-hover/gallery:[animation-play-state:paused]"
           style={{ "--marquee-duration": `${DURATION_SECONDS}s` } as React.CSSProperties}
         >
           {[0, 1].map((copy) => (
-            <div key={copy} className="flex h-full shrink-0 items-center gap-5 pr-5">
+            <div key={copy} className="flex h-full shrink-0 items-end gap-5 pr-5">
               {slots.map((slotImages, i) => (
-                <Slot key={`${copy}-${i}`} images={slotImages} offsetIndex={i} />
+                <Slot key={`${copy}-${i}`} images={slotImages} />
               ))}
             </div>
           ))}
