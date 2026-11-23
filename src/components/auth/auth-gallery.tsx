@@ -4,10 +4,10 @@ import { useEffect, useMemo, useRef } from "react";
 import { cn } from "@/lib/utils";
 import type { AuthGalleryImage } from "@/types/auth-gallery";
 
-// Halved speed vs. the original single-track version (28s -> 56s): same
-// distance per loop, twice the duration, i.e. half the px/s. Keep as-is —
-// this was an explicit "don't speed it back up" requirement.
-const DURATION_SECONDS = 56;
+// Halved again per explicit request (56s -> 112s): same distance per
+// loop, twice the duration, i.e. half the px/s once more (a quarter of
+// the original 28s speed overall).
+const DURATION_SECONDS = 112;
 
 // Generous enough to overflow any realistic viewport width (including
 // ultra-wide desktop monitors) from the very first frame, same reasoning
