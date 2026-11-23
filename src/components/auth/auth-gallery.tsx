@@ -112,10 +112,11 @@ function pickHeightPct(random: () => number) {
 }
 
 // Both tiles in a double column are this height (% of row height),
-// stacked with a small fixed gap — kept modest so the pair's total
-// height (2x this + the stack gap) comfortably clears MAX_HEIGHT_PCT,
+// stacked with a small fixed gap. Sized ~20% larger than the original
+// 38 per explicit request — the pair's total height (2x this + the
+// stack gap) still clears MAX_HEIGHT_PCT comfortably, so it's still
 // never the tallest thing in the band.
-const DOUBLE_TILE_HEIGHT_PCT = 38;
+const DOUBLE_TILE_HEIGHT_PCT = 45.6;
 
 type SingleColumn = { type: "single"; image: AuthGalleryImage; aspect: (typeof ASPECTS)[number]; heightPct: number };
 type DoubleColumn = { type: "double"; images: [AuthGalleryImage, AuthGalleryImage]; heightPct: number };
