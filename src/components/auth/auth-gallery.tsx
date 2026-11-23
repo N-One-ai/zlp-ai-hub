@@ -14,16 +14,14 @@ const DURATION_SECONDS = 56;
 // as dashboard-marquee.tsx's own REPEAT_COUNT — a short admin-configured
 // image list (as few as 2) still needs to tile out far past 100vw before
 // the loop's 50% duplicate boundary, or the band would show a gap on a
-// wide screen while still catching up to a full row. Higher than the
-// previous uniform-square version since a mix of landscape/wide cards
-// adds less width per unit height than a column of squares would.
+// wide screen while still catching up to a full row.
 const MIN_TILES = 34;
 
-// Fixed seed (never Math.random()) so the per-tile shape / vertical
-// offset / gap sequence below is identical on the server-rendered HTML
-// and the client hydration pass, and identical again on every re-render
-// in between — a real random source would cause a hydration mismatch
-// and a layout that visibly jumps every time React re-renders.
+// Fixed seed (never Math.random()) so the per-tile aspect / height / gap
+// sequence below is identical on the server-rendered HTML and the client
+// hydration pass, and identical again on every re-render in between — a
+// real random source would cause a hydration mismatch and a layout that
+// visibly jumps every time React re-renders.
 const LAYOUT_SEED = 20260207;
 
 function mulberry32(seed: number) {
@@ -36,73 +34,87 @@ function mulberry32(seed: number) {
   };
 }
 
-/** Card shapes a tile can take, as a height (percentage of the row's
- * full height), a CSS `aspect-ratio` string (width / height) and that
- * same ratio as a number — width is derived from these, never set
- * directly, so every tile stays a clean, undistorted crop regardless of
- * shape. Weighted so most tiles are square/portrait like the reference,
- * with landscape/wide ones mixed in more sparingly. */
-const SHAPES = [
-  { key: "square", heightPct: 44, aspect: "1 / 1", ratio: 1, weight: 5 },
-  { key: "portrait", heightPct: 58, aspect: "3 / 4", ratio: 3 / 4, weight: 4 },
-  { key: "tall", heightPct: 70, aspect: "2 / 3", ratio: 2 / 3, weight: 2 },
-  { key: "landscape", heightPct: 36, aspect: "4 / 3", ratio: 4 / 3, weight: 2 },
-  { key: "wide", heightPct: 30, aspect: "16 / 9", ratio: 16 / 9, weight: 1 },
+/** Card aspect ratios a tile can take, as a CSS `aspect-ratio` string
+ * (width / height) and that same ratio as a number — width is derived
+ * from the tile's height and this ratio, never set directly, so every
+ * tile stays a clean, undistorted crop regardless of shape. Weighted so
+ * most tiles are square/portrait, with landscape/wide ones mixed in
+ * more sparingly. Height is picked independently (see pickHeightPct) so
+ * a "tall" column and a short one can each be any aspect. */
+const ASPECTS = [
+  { key: "square", aspect: "1 / 1", ratio: 1, weight: 5 },
+  { key: "portrait", aspect: "3 / 4", ratio: 3 / 4, weight: 4 },
+  { key: "narrow", aspect: "2 / 3", ratio: 2 / 3, weight: 2 },
+  { key: "landscape", aspect: "4 / 3", ratio: 4 / 3, weight: 2 },
+  { key: "wide", aspect: "16 / 9", ratio: 16 / 9, weight: 1 },
 ] as const;
 
-const TOTAL_SHAPE_WEIGHT = SHAPES.reduce((sum, s) => sum + s.weight, 0);
+const TOTAL_ASPECT_WEIGHT = ASPECTS.reduce((sum, a) => sum + a.weight, 0);
 
-function pickShape(random: () => number, avoidKey: string | null) {
-  // Re-roll (bounded) rather than pick the same shape 3 times running —
-  // keeps the "controlled random" skyline from accidentally going flat.
+function pickAspect(random: () => number, avoidKey: string | null) {
+  // Re-roll (bounded) rather than pick the same aspect 3 times running —
+  // keeps the sequence looking organic instead of accidentally regular.
   for (let attempt = 0; attempt < 4; attempt++) {
-    let roll = random() * TOTAL_SHAPE_WEIGHT;
-    for (const shape of SHAPES) {
-      roll -= shape.weight;
+    let roll = random() * TOTAL_ASPECT_WEIGHT;
+    for (const aspect of ASPECTS) {
+      roll -= aspect.weight;
       if (roll <= 0) {
-        if (shape.key !== avoidKey || attempt === 3) return shape;
+        if (aspect.key !== avoidKey || attempt === 3) return aspect;
         break;
       }
     }
   }
-  return SHAPES[0];
+  return ASPECTS[0];
 }
 
-/** When the image's own dimensions are known, pick the shape whose
- * aspect ratio is closest to the image's actual aspect ratio instead of
- * a blind weighted pick. This matters most for small icon-style
- * artwork centered on a mostly-empty canvas (the original seed tiles):
- * forcing one of those into a very different aspect ratio crops the
- * actual illustration out of frame, leaving only its plain background
- * visible — which reads as an empty tile even though it technically has
- * an image in it. A real uploaded photo (no stored dimensions yet, or
- * one that fills its frame edge-to-edge) falls back to the ordinary
- * weighted-random pick, where any crop still shows real content. */
-function pickShapeForImage(image: AuthGalleryImage, random: () => number, avoidKey: string | null) {
-  if (!image.imageWidth || !image.imageHeight) return pickShape(random, avoidKey);
+/** When the image's own dimensions are known, pick the aspect closest
+ * to the image's actual aspect ratio instead of a blind weighted pick.
+ * This matters most for small icon-style artwork centered on a mostly-
+ * empty canvas (the original seed tiles): forcing one of those into a
+ * very different aspect ratio crops the actual illustration out of
+ * frame, leaving only its plain background visible — which reads as an
+ * empty tile even though it technically has an image in it. A real
+ * uploaded photo (no stored dimensions yet, or one that fills its frame
+ * edge-to-edge) falls back to the ordinary weighted-random pick, where
+ * any crop still shows real content. */
+function pickAspectForImage(image: AuthGalleryImage, random: () => number, avoidKey: string | null) {
+  if (!image.imageWidth || !image.imageHeight) return pickAspect(random, avoidKey);
 
   const nativeRatio = image.imageWidth / image.imageHeight;
-  const ranked = [...SHAPES].sort(
+  const ranked = [...ASPECTS].sort(
     (a, b) => Math.abs(Math.log(a.ratio / nativeRatio)) - Math.abs(Math.log(b.ratio / nativeRatio)),
   );
   if (ranked[0].key !== avoidKey) return ranked[0];
-  return ranked.find((shape) => shape.key !== avoidKey) ?? ranked[0];
+  return ranked.find((aspect) => aspect.key !== avoidKey) ?? ranked[0];
+}
+
+// Tile heights vary tile-to-tile between these bounds, as a percentage
+// of the row's own height — bottom-aligned (see GalleryTile), so the
+// tallest tiles reach almost to the top of the band and the shortest
+// ones still sit flush with the bottom, producing the reference's
+// uneven "skyline"/bar-chart silhouette that fills the footer edge to
+// edge rather than leaving empty space above a row of same-height
+// tiles.
+const MIN_HEIGHT_PCT = 34;
+const MAX_HEIGHT_PCT = 96;
+
+function pickHeightPct(random: () => number) {
+  return MIN_HEIGHT_PCT + random() * (MAX_HEIGHT_PCT - MIN_HEIGHT_PCT);
 }
 
 type TileLayout = {
   image: AuthGalleryImage;
-  shape: (typeof SHAPES)[number];
-  offsetFraction: number;
+  aspect: (typeof ASPECTS)[number];
+  heightPct: number;
   gapPx: number;
 };
 
 /** Builds a deterministic-but-irregular tile sequence: repeats the
  * admin's (possibly short) image list until there are at least
- * MIN_TILES tiles, then assigns each one a shape, a vertical offset
- * (bounded so it never clips the band, computed from that shape's own
- * headroom), and a slightly jittered gap to the next tile — height,
- * vertical position AND spacing all vary, matching "ngẫu nhiên có kiểm
- * soát" rather than a uniform grid or a repeating cycle. */
+ * MIN_TILES tiles, then assigns each one an aspect ratio, a height, and
+ * a slightly jittered gap to the next tile — shape, height AND spacing
+ * all vary, matching "ngẫu nhiên có kiểm soát" rather than a uniform
+ * grid or a repeating cycle. */
 function buildTileLayout(images: AuthGalleryImage[]): TileLayout[] {
   if (images.length === 0) return [];
 
@@ -116,41 +128,32 @@ function buildTileLayout(images: AuthGalleryImage[]): TileLayout[] {
 
   for (let i = 0; i < MIN_TILES; i++) {
     const image = flat[i % flat.length];
-    const shape = pickShapeForImage(image, random, runLength >= 2 ? runKey : null);
-    if (shape.key === runKey) {
+    const aspect = pickAspectForImage(image, random, runLength >= 2 ? runKey : null);
+    if (aspect.key === runKey) {
       runLength++;
     } else {
-      runKey = shape.key;
+      runKey = aspect.key;
       runLength = 1;
     }
 
-    // Headroom is how far (as a fraction of the row's own height) this
-    // shape's content can move up/down from center before touching the
-    // top/bottom edge; a 10% safety margin keeps it short of that limit.
-    const headroomFraction = (100 - shape.heightPct) / 2 / 100;
-    const maxOffset = headroomFraction * 0.85;
-    const offsetFraction = (random() * 2 - 1) * maxOffset;
-
+    const heightPct = pickHeightPct(random);
     const gapPx = 14 + Math.round(random() * 22); // ~14-36px, varies tile-to-tile
 
-    layout.push({ image, shape, offsetFraction, gapPx });
+    layout.push({ image, aspect, heightPct, gapPx });
   }
 
   return layout;
 }
 
 function GalleryTile({ layout }: { layout: TileLayout }) {
-  const { image, shape, offsetFraction, gapPx } = layout;
+  const { image, aspect, heightPct, gapPx } = layout;
   return (
-    <div
-      className="flex h-full shrink-0 items-center justify-center"
-      style={{ marginRight: `${gapPx}px`, transform: `translateY(${(offsetFraction * 100).toFixed(2)}%)` }}
-    >
+    <div className="flex h-full shrink-0 items-end" style={{ marginRight: `${gapPx}px` }}>
       <div
         className="relative overflow-hidden rounded-2xl border border-cyan-400/60"
         style={{
-          height: `calc(${shape.heightPct}% * var(--shape-scale, 1))`,
-          aspectRatio: shape.aspect,
+          height: `calc(${heightPct}% * var(--shape-scale, 1))`,
+          aspectRatio: aspect.aspect,
           boxShadow: "0 0 14px rgba(45, 212, 191, 0.22)",
         }}
       >
@@ -180,31 +183,32 @@ function GalleryTile({ layout }: { layout: TileLayout }) {
  * already handled globally in globals.css (collapses every animation to
  * a single frame), so no separate reduced-motion branch is needed here.
  *
- * Tiles vary in size (square/portrait/landscape/etc., buildTileLayout's
- * SHAPES), vertical offset and gap, in a deterministic-but-irregular
- * sequence rather than a repeating cycle or a uniform grid — this is
- * "ngẫu nhiên có kiểm soát": random-looking, but computed once from a
- * fixed seed off the `images` prop so the layout never jitters on a
- * re-render. Shape assignment prefers whichever option is closest to the
- * image's own stored aspect ratio (pickShapeForImage) rather than a pure
- * blind pick — a small icon-style illustration on a mostly-empty canvas
- * forced into a very different aspect ratio can get `object-cover`-
- * cropped down to just its plain background, which reads as an empty
- * tile even though an image is technically there. Real photos only —
- * every tile renders the admin's actual
- * `imageUrl`, never a drawn shape/icon in its place. Images are NOT
- * lazy-loaded: every tile is "above the fold" from the first frame by
- * construction (buildTileLayout pre-fills the whole width), so lazy-
- * loading them would just mean a visible pop-in instead of starting
- * fully populated — the explicit requirement that the gallery never
- * starts empty. Tile layout size comes entirely from CSS (percentage
- * height + aspect-ratio), never from the image's own intrinsic size, so
- * there's no layout shift as each `<img>` finishes loading. On narrow
- * (mobile) viewports every tile shrinks together via the `--shape-scale`
- * CSS custom property (0.78 under `max-sm:`) — vertical offsets are
- * already expressed as a fraction of the row's own height rather than
- * the tile's, so shrinking tiles only adds headroom, it never pushes
- * anything toward overlapping or overflowing the band.
+ * Every tile is bottom-aligned (`items-end`, no vertical centering or
+ * offset) and has its own height picked independently of its aspect
+ * ratio (MIN_HEIGHT_PCT..MAX_HEIGHT_PCT) — this is what produces the
+ * reference's uneven skyline/bar-chart silhouette, flush with the
+ * bottom of the band and reaching close to its top at the tallest
+ * points, rather than a row of tiles vertically centered with empty
+ * space above and below all of them. Aspect assignment prefers
+ * whichever option is closest to the image's own stored aspect ratio
+ * (pickAspectForImage) rather than a pure blind pick — a small icon-
+ * style illustration on a mostly-empty canvas forced into a very
+ * different aspect ratio can get `object-cover`-cropped down to just
+ * its plain background, which reads as an empty tile even though an
+ * image is technically there. Real photos only — every tile renders
+ * the admin's actual `imageUrl`, never a drawn shape/icon in its place.
+ * Images are NOT lazy-loaded: every tile is "above the fold" from the
+ * first frame by construction (buildTileLayout pre-fills the whole
+ * width), so lazy-loading them would just mean a visible pop-in instead
+ * of starting fully populated — the explicit requirement that the
+ * gallery never starts empty. Tile layout size comes entirely from CSS
+ * (percentage height + aspect-ratio), never from the image's own
+ * intrinsic size, so there's no layout shift as each `<img>` finishes
+ * loading. On narrow (mobile) viewports every tile shrinks together via
+ * the `--shape-scale` CSS custom property (0.78 under `max-sm:`) —
+ * shrinking only ever reduces how close the tallest tiles get to the
+ * top of the band, it can never cause overlap or overflow since every
+ * tile stays anchored to the same bottom edge.
  */
 export function AuthGallery({ images, className }: { images: AuthGalleryImage[]; className?: string }) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -233,11 +237,11 @@ export function AuthGallery({ images, className }: { images: AuthGalleryImage[];
          * (buildTileLayout), so the very first frame is already a
          * completely filled band, not an empty one animating into view. */}
         <div
-          className="marquee-row flex h-full w-max items-center animate-marquee [animation-direction:reverse] group-hover/gallery:[animation-play-state:paused]"
+          className="marquee-row flex h-full w-max items-end animate-marquee [animation-direction:reverse] group-hover/gallery:[animation-play-state:paused]"
           style={{ "--marquee-duration": `${DURATION_SECONDS}s` } as React.CSSProperties}
         >
           {[0, 1].map((copy) => (
-            <div key={copy} className="flex h-full shrink-0 items-center">
+            <div key={copy} className="flex h-full shrink-0 items-end">
               {tiles.map((layout, i) => (
                 <GalleryTile key={`${copy}-${i}`} layout={layout} />
               ))}
