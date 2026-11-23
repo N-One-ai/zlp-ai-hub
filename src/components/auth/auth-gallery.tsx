@@ -5,7 +5,8 @@ import { cn } from "@/lib/utils";
 import type { AuthGalleryImage } from "@/types/auth-gallery";
 
 // Halved speed vs. the original single-track version (28s -> 56s): same
-// distance per loop, twice the duration, i.e. half the px/s.
+// distance per loop, twice the duration, i.e. half the px/s. Keep as-is —
+// this was an explicit "don't speed it back up" requirement.
 const DURATION_SECONDS = 56;
 
 // Generous enough to overflow any realistic viewport width (including
@@ -13,20 +14,17 @@ const DURATION_SECONDS = 56;
 // as dashboard-marquee.tsx's own REPEAT_COUNT — a short admin-configured
 // image list (as few as 2) still needs to tile out far past 100vw before
 // the loop's 50% duplicate boundary, or the band would show a gap on a
-// wide screen while still catching up to a full row.
-const MIN_SLOTS = 20;
+// wide screen while still catching up to a full row. Higher than the
+// previous uniform-square version since a mix of landscape/wide cards
+// adds less width per unit height than a column of squares would.
+const MIN_TILES = 34;
 
-// Every tile (whether alone in a 1-slot or paired in a 2-slot) is the
-// same square size, as a percentage of the row's height — "cùng kích
-// thước vuông" regardless of slot type.
-const TILE_HEIGHT_PCT = 40;
-
-// Fixed seed (never Math.random()) so the "random-looking" 1-vs-2
-// sequence below is identical on the server-rendered HTML and the
-// client hydration pass — a real random source here would cause a
-// hydration mismatch, since this component's initial render has no
-// user interaction to justify differing from the server.
-const PATTERN_SEED = 20260207;
+// Fixed seed (never Math.random()) so the per-tile shape / vertical
+// offset / gap sequence below is identical on the server-rendered HTML
+// and the client hydration pass, and identical again on every re-render
+// in between — a real random source would cause a hydration mismatch
+// and a layout that visibly jumps every time React re-renders.
+const LAYOUT_SEED = 20260207;
 
 function mulberry32(seed: number) {
   let t = seed;
@@ -38,88 +36,107 @@ function mulberry32(seed: number) {
   };
 }
 
-/** Deterministic, irregular sequence of slot sizes (1 or 2 images per
- * slot) — mostly single tiles with doubled tiles mixed in at random
- * (not a repeating 1-2-1-2 cycle), matching the reference's uneven
- * "skyline" look. Allows up to 2 of the same size back-to-back (so the
- * sequence still looks organic, not strictly alternating) but forbids a
- * 3rd in a row, so it never goes flat for too long either. */
-function buildSlotPattern(length: number): number[] {
-  const random = mulberry32(PATTERN_SEED);
-  const pattern: number[] = [];
-  let prev = 0;
-  let runLength = 0;
-  for (let i = 0; i < length; i++) {
-    let count = random() < 0.65 ? 1 : 2;
-    if (count === prev) {
-      runLength++;
-      if (runLength > 2) {
-        count = prev === 1 ? 2 : 1;
-        runLength = 1;
+/** Card shapes a tile can take, as a height (percentage of the row's
+ * full height) and a CSS `aspect-ratio` (width / height) — width is
+ * derived from these two, never set directly, so every tile stays a
+ * clean, undistorted crop regardless of shape. Weighted so most tiles
+ * are square/portrait like the reference, with landscape/wide ones
+ * mixed in more sparingly. */
+const SHAPES = [
+  { key: "square", heightPct: 44, aspect: "1 / 1", weight: 5 },
+  { key: "portrait", heightPct: 58, aspect: "3 / 4", weight: 4 },
+  { key: "tall", heightPct: 70, aspect: "2 / 3", weight: 2 },
+  { key: "landscape", heightPct: 36, aspect: "4 / 3", weight: 2 },
+  { key: "wide", heightPct: 30, aspect: "16 / 9", weight: 1 },
+] as const;
+
+const TOTAL_SHAPE_WEIGHT = SHAPES.reduce((sum, s) => sum + s.weight, 0);
+
+function pickShape(random: () => number, avoidKey: string | null) {
+  // Re-roll (bounded) rather than pick the same shape 3 times running —
+  // keeps the "controlled random" skyline from accidentally going flat.
+  for (let attempt = 0; attempt < 4; attempt++) {
+    let roll = random() * TOTAL_SHAPE_WEIGHT;
+    for (const shape of SHAPES) {
+      roll -= shape.weight;
+      if (roll <= 0) {
+        if (shape.key !== avoidKey || attempt === 3) return shape;
+        break;
       }
-    } else {
-      runLength = 1;
     }
-    prev = count;
-    pattern.push(count);
   }
-  return pattern;
+  return SHAPES[0];
 }
 
-/** Splits the admin's (possibly short) image list into slots sized per
- * buildSlotPattern, repeating the source list as needed so there are
- * always at least MIN_SLOTS slots — enough to tile densely past any
- * realistic viewport width on the very first frame. */
-function buildClusterSlots(images: AuthGalleryImage[]): AuthGalleryImage[][] {
+type TileLayout = {
+  image: AuthGalleryImage;
+  shape: (typeof SHAPES)[number];
+  offsetFraction: number;
+  gapPx: number;
+};
+
+/** Builds a deterministic-but-irregular tile sequence: repeats the
+ * admin's (possibly short) image list until there are at least
+ * MIN_TILES tiles, then assigns each one a shape, a vertical offset
+ * (bounded so it never clips the band, computed from that shape's own
+ * headroom), and a slightly jittered gap to the next tile — height,
+ * vertical position AND spacing all vary, matching "ngẫu nhiên có kiểm
+ * soát" rather than a uniform grid or a repeating cycle. */
+function buildTileLayout(images: AuthGalleryImage[]): TileLayout[] {
   if (images.length === 0) return [];
 
-  const pattern = buildSlotPattern(MIN_SLOTS);
-  const neededImages = pattern.reduce((sum, n) => sum + n, 0);
-  const repeats = Math.ceil(neededImages / images.length);
+  const random = mulberry32(LAYOUT_SEED);
+  const repeats = Math.ceil(MIN_TILES / images.length);
   const flat = Array.from({ length: repeats }, () => images).flat();
 
-  const slots: AuthGalleryImage[][] = [];
-  let cursor = 0;
-  for (const count of pattern) {
-    const slotImages: AuthGalleryImage[] = [];
-    for (let k = 0; k < count; k++) {
-      slotImages.push(flat[cursor % flat.length]);
-      cursor++;
+  const layout: TileLayout[] = [];
+  let runKey: string | null = null;
+  let runLength = 0;
+
+  for (let i = 0; i < MIN_TILES; i++) {
+    const shape = pickShape(random, runLength >= 2 ? runKey : null);
+    if (shape.key === runKey) {
+      runLength++;
+    } else {
+      runKey = shape.key;
+      runLength = 1;
     }
-    slots.push(slotImages);
+
+    // Headroom is how far (as a fraction of the row's own height) this
+    // shape's content can move up/down from center before touching the
+    // top/bottom edge; a 10% safety margin keeps it short of that limit.
+    const headroomFraction = (100 - shape.heightPct) / 2 / 100;
+    const maxOffset = headroomFraction * 0.85;
+    const offsetFraction = (random() * 2 - 1) * maxOffset;
+
+    const gapPx = 14 + Math.round(random() * 22); // ~14-36px, varies tile-to-tile
+
+    layout.push({ image: flat[i % flat.length], shape, offsetFraction, gapPx });
   }
-  return slots;
+
+  return layout;
 }
 
-function SquareTile({ image }: { image: AuthGalleryImage }) {
+function GalleryTile({ layout }: { layout: TileLayout }) {
+  const { image, shape, offsetFraction, gapPx } = layout;
   return (
-    <div className="aspect-square shrink-0 overflow-hidden rounded-xl ring-1 ring-border/70" style={{ height: `${TILE_HEIGHT_PCT}%` }}>
-      {/* eslint-disable-next-line @next/next/no-img-element -- admin-managed public URLs (Storage public bucket or static /auth/gallery asset); eager-loaded on purpose, see component docstring */}
-      <img src={image.imageUrl} alt="" aria-hidden="true" className="size-full object-cover" decoding="async" />
-    </div>
-  );
-}
-
-/** One slot: a single square tile, or two square tiles stacked
- * vertically (same tile size as a single slot). The slot is always the
- * row's full height with its content pushed to the BOTTOM
- * (`justify-end`) — so a 1-tile slot sits flush with the bottom of a
- * neighboring 2-tile slot, exactly like blocks resting on a shared
- * baseline, rather than both being vertically centered. */
-function Slot({ images }: { images: AuthGalleryImage[] }) {
-  if (images.length === 1) {
-    return (
-      <div className="flex h-full shrink-0 flex-col items-center justify-end">
-        <SquareTile image={images[0]} />
+    <div
+      className="flex h-full shrink-0 items-center justify-center"
+      style={{ marginRight: `${gapPx}px`, transform: `translateY(${(offsetFraction * 100).toFixed(2)}%)` }}
+    >
+      <div
+        className="relative overflow-hidden rounded-2xl border border-cyan-400/60"
+        style={{
+          height: `calc(${shape.heightPct}% * var(--shape-scale, 1))`,
+          aspectRatio: shape.aspect,
+          boxShadow: "0 0 14px rgba(45, 212, 191, 0.22)",
+        }}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element -- admin-managed public URLs (Storage public bucket or static /auth/gallery asset); eager-loaded on purpose, see component docstring */}
+        <img src={image.imageUrl} alt="" aria-hidden="true" className="size-full object-cover" decoding="async" />
+        {/* Subtle bottom fade only — never dark enough to obscure most of the photo. */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-1/4 bg-gradient-to-t from-black/25 to-transparent" />
       </div>
-    );
-  }
-
-  return (
-    <div className="flex h-full shrink-0 flex-col items-center justify-end gap-3">
-      {images.map((image, i) => (
-        <SquareTile key={i} image={image} />
-      ))}
     </div>
   );
 }
@@ -134,28 +151,36 @@ function Slot({ images }: { images: AuthGalleryImage[] }) {
  * whole thing is `aria-hidden` and has no focusable descendant to receive
  * focus). Images come from the admin-managed /auth-gallery list
  * (lib/auth-gallery/queries.ts) — the page decides whether to render this
- * at all via getAuthGallerySettings().isEnabled. `prefers-reduced-motion`
- * is already handled globally in globals.css (collapses every animation
- * to a single frame), so no separate reduced-motion branch is needed here.
+ * at all via getAuthGallerySettings().isEnabled, and renders nothing here
+ * (no geometric placeholder) when there are zero configured images — the
+ * "trạng thái fallback tối giản" is simply not reserving the band at all,
+ * handled one level up in AuthPageLayout. `prefers-reduced-motion` is
+ * already handled globally in globals.css (collapses every animation to
+ * a single frame), so no separate reduced-motion branch is needed here.
  *
- * Slots are either a single square tile or two stacked vertically, in a
- * deterministic-but-irregular sequence (buildSlotPattern) rather than a
- * strict alternating cycle, and every slot's content sits flush with the
- * bottom of the band — a 1-tile slot is exactly as "low" as the bottom
- * tile of a neighboring 2-tile slot, producing the uneven skyline from
- * the reference instead of a row of vertically-centered tiles. Images
- * are NOT lazy-loaded: every tile is "above the fold" from the first
- * frame by construction (buildClusterSlots pre-fills the whole width),
- * so lazy-loading them would just mean a visible pop-in instead of
- * starting fully populated — the explicit requirement that the gallery
- * never starts empty. Tile layout size comes entirely from CSS
- * (percentage height + aspect-square), never from the image's own
- * intrinsic size, so there's no layout shift as each `<img>` finishes
- * loading.
+ * Tiles vary in size (square/portrait/landscape/etc., buildTileLayout's
+ * SHAPES), vertical offset and gap, in a deterministic-but-irregular
+ * sequence rather than a repeating cycle or a uniform grid — this is
+ * "ngẫu nhiên có kiểm soát": random-looking, but computed once from a
+ * fixed seed off the `images` prop so the layout never jitters on a
+ * re-render. Real photos only — every tile renders the admin's actual
+ * `imageUrl`, never a drawn shape/icon in its place. Images are NOT
+ * lazy-loaded: every tile is "above the fold" from the first frame by
+ * construction (buildTileLayout pre-fills the whole width), so lazy-
+ * loading them would just mean a visible pop-in instead of starting
+ * fully populated — the explicit requirement that the gallery never
+ * starts empty. Tile layout size comes entirely from CSS (percentage
+ * height + aspect-ratio), never from the image's own intrinsic size, so
+ * there's no layout shift as each `<img>` finishes loading. On narrow
+ * (mobile) viewports every tile shrinks together via the `--shape-scale`
+ * CSS custom property (0.78 under `max-sm:`) — vertical offsets are
+ * already expressed as a fraction of the row's own height rather than
+ * the tile's, so shrinking tiles only adds headroom, it never pushes
+ * anything toward overlapping or overflowing the band.
  */
 export function AuthGallery({ images, className }: { images: AuthGalleryImage[]; className?: string }) {
   const rootRef = useRef<HTMLDivElement>(null);
-  const slots = useMemo(() => buildClusterSlots(images), [images]);
+  const tiles = useMemo(() => buildTileLayout(images), [images]);
 
   useEffect(() => {
     const el = rootRef.current;
@@ -168,25 +193,25 @@ export function AuthGallery({ images, className }: { images: AuthGalleryImage[];
     return () => document.removeEventListener("visibilitychange", onVisibility);
   }, []);
 
-  if (slots.length === 0) return null;
+  if (tiles.length === 0) return null;
 
   return (
-    <div ref={rootRef} aria-hidden="true" className={cn("group/gallery overflow-hidden", className)}>
-      <div className="h-full overflow-hidden opacity-80 transition-opacity group-hover/gallery:opacity-100">
+    <div ref={rootRef} aria-hidden="true" className={cn("group/gallery overflow-hidden max-sm:[--shape-scale:0.78]", className)}>
+      <div className="h-full overflow-hidden opacity-90 transition-opacity group-hover/gallery:opacity-100">
         {/* Two copies back-to-back, animated exactly -50% -> 0% so the loop
          * point is invisible — same technique as dashboard-marquee.tsx, just
          * played in `reverse` so it moves left-to-right instead of
          * right-to-left. Both copies are already fully built
-         * (buildClusterSlots), so the very first frame is already a
+         * (buildTileLayout), so the very first frame is already a
          * completely filled band, not an empty one animating into view. */}
         <div
-          className="marquee-row flex h-full w-max items-end gap-5 animate-marquee [animation-direction:reverse] group-hover/gallery:[animation-play-state:paused]"
+          className="marquee-row flex h-full w-max items-center animate-marquee [animation-direction:reverse] group-hover/gallery:[animation-play-state:paused]"
           style={{ "--marquee-duration": `${DURATION_SECONDS}s` } as React.CSSProperties}
         >
           {[0, 1].map((copy) => (
-            <div key={copy} className="flex h-full shrink-0 items-end gap-5 pr-5">
-              {slots.map((slotImages, i) => (
-                <Slot key={`${copy}-${i}`} images={slotImages} />
+            <div key={copy} className="flex h-full shrink-0 items-center">
+              {tiles.map((layout, i) => (
+                <GalleryTile key={`${copy}-${i}`} layout={layout} />
               ))}
             </div>
           ))}

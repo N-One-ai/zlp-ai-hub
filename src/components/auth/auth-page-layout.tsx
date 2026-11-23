@@ -13,10 +13,15 @@ import { AuthGallery } from "./auth-gallery";
  * the form up" so the gallery band at the bottom is always fully
  * visible, never cropped or covered. Gallery height is a chunk of the
  * viewport height on larger screens (≈40-45%, per spec) and a smaller,
- * fixed-minimum chunk on mobile — slots (single tiles and stacked pairs)
- * are all bottom-aligned to this band, so the gallery scales down
- * naturally with the band's own height on a short viewport without
- * needing a separate mobile-specific adjustment.
+ * fixed-minimum chunk on mobile, where AuthGallery also shrinks every
+ * tile (via its own `--shape-scale` custom property) so the varied
+ * card sizes stay comfortably inside the shorter band instead of
+ * crowding or clipping it.
+ *
+ * When there are no active gallery images (or the admin has disabled
+ * the gallery), this band isn't rendered at all — that *is* the
+ * "trạng thái fallback tối giản": no reserved empty space, no drawn
+ * placeholder shapes standing in for real photos, just the plain form.
  */
 export async function AuthPageLayout({ children }: { children: React.ReactNode }) {
   const [images, settings] = await Promise.all([getActiveAuthGalleryImages(), getAuthGallerySettings()]);
