@@ -15,9 +15,16 @@ const DURATION_SECONDS = 112;
 // image list (as few as 2) still needs to tile out far past 100vw before
 // the loop's 50% duplicate boundary, or the band would show a gap on a
 // wide screen while still catching up to a full row.
-const MIN_TILES = 34;
+const MIN_COLUMNS = 26;
 
-// Fixed seed (never Math.random()) so the per-tile aspect / height / gap
+// Every column (single tile or double-stack) is separated from its
+// neighbor by this exact gap, measured edge-to-edge — "khoảng cách...
+// phải bằng nhau... tính theo mép thẻ, không theo tâm". No per-column
+// jitter anymore: a fixed gap is what makes every column, regardless of
+// its own width or whether it's a single/double, read as evenly spaced.
+const GAP_PX = 22;
+
+// Fixed seed (never Math.random()) so the column-type / aspect / height
 // sequence below is identical on the server-rendered HTML and the client
 // hydration pass, and identical again on every re-render in between — a
 // real random source would cause a hydration mismatch and a layout that
@@ -34,13 +41,16 @@ function mulberry32(seed: number) {
   };
 }
 
-/** Card aspect ratios a tile can take, as a CSS `aspect-ratio` string
- * (width / height) and that same ratio as a number — width is derived
- * from the tile's height and this ratio, never set directly, so every
- * tile stays a clean, undistorted crop regardless of shape. Weighted so
- * most tiles are square/portrait, with landscape/wide ones mixed in
- * more sparingly. Height is picked independently (see pickHeightPct) so
- * a "tall" column and a short one can each be any aspect. */
+/** Card aspect ratios a SINGLE column's tile can take, as a CSS
+ * `aspect-ratio` string (width / height) and that same ratio as a
+ * number — width is derived from the tile's height and this ratio,
+ * never set directly, so every tile stays a clean, undistorted crop
+ * regardless of shape. Weighted so most tiles are square/portrait, with
+ * landscape/wide ones mixed in more sparingly. Height is picked
+ * independently (see pickHeightPct) so a "tall" column and a short one
+ * can each be any aspect. Double columns always use the "square" entry
+ * for both of their tiles (see buildColumnLayout) — that's what keeps
+ * the two tiles in a double column the same size as each other. */
 const ASPECTS = [
   { key: "square", aspect: "1 / 1", ratio: 1, weight: 5 },
   { key: "portrait", aspect: "3 / 4", ratio: 3 / 4, weight: 4 },
@@ -49,6 +59,7 @@ const ASPECTS = [
   { key: "wide", aspect: "16 / 9", ratio: 16 / 9, weight: 1 },
 ] as const;
 
+const SQUARE_ASPECT = ASPECTS[0];
 const TOTAL_ASPECT_WEIGHT = ASPECTS.reduce((sum, a) => sum + a.weight, 0);
 
 function pickAspect(random: () => number, avoidKey: string | null) {
@@ -88,13 +99,11 @@ function pickAspectForImage(image: AuthGalleryImage, random: () => number, avoid
   return ranked.find((aspect) => aspect.key !== avoidKey) ?? ranked[0];
 }
 
-// Tile heights vary tile-to-tile between these bounds, as a percentage
-// of the row's own height — bottom-aligned (see GalleryTile), so the
-// tallest tiles reach almost to the top of the band and the shortest
-// ones still sit flush with the bottom, producing the reference's
-// uneven "skyline"/bar-chart silhouette that fills the footer edge to
-// edge rather than leaving empty space above a row of same-height
-// tiles.
+// Single-column heights vary column-to-column between these bounds, as
+// a percentage of the row's own height — bottom-aligned (see
+// GalleryColumn), so the tallest columns reach almost to the top of the
+// band and the shortest still sit flush with the bottom, producing the
+// skyline/bar-chart silhouette that fills the footer edge to edge.
 const MIN_HEIGHT_PCT = 34;
 const MAX_HEIGHT_PCT = 96;
 
@@ -102,32 +111,60 @@ function pickHeightPct(random: () => number) {
   return MIN_HEIGHT_PCT + random() * (MAX_HEIGHT_PCT - MIN_HEIGHT_PCT);
 }
 
-type TileLayout = {
-  image: AuthGalleryImage;
-  aspect: (typeof ASPECTS)[number];
-  heightPct: number;
-  gapPx: number;
-};
+// Both tiles in a double column are this height (% of row height),
+// stacked with a small fixed gap — kept modest so the pair's total
+// height (2x this + the stack gap) comfortably clears MAX_HEIGHT_PCT,
+// never the tallest thing in the band.
+const DOUBLE_TILE_HEIGHT_PCT = 38;
 
-/** Builds a deterministic-but-irregular tile sequence: repeats the
- * admin's (possibly short) image list until there are at least
- * MIN_TILES tiles, then assigns each one an aspect ratio, a height, and
- * a slightly jittered gap to the next tile — shape, height AND spacing
- * all vary, matching "ngẫu nhiên có kiểm soát" rather than a uniform
- * grid or a repeating cycle. */
-function buildTileLayout(images: AuthGalleryImage[]): TileLayout[] {
+type SingleColumn = { type: "single"; image: AuthGalleryImage; aspect: (typeof ASPECTS)[number]; heightPct: number };
+type DoubleColumn = { type: "double"; images: [AuthGalleryImage, AuthGalleryImage]; heightPct: number };
+type ColumnLayout = SingleColumn | DoubleColumn;
+
+/** Builds a deterministic-but-irregular column sequence: repeats the
+ * admin's (possibly short) image list as needed, then walks MIN_COLUMNS
+ * slots where every 2nd-or-3rd single column is replaced by a double
+ * column (two square tiles stacked) — "cứ khoảng 2-3 ảnh/cột đơn thì
+ * chèn một cột đôi". Single columns vary in aspect and height
+ * ("cột đơn cao/thấp... có chủ đích"); double columns are always two
+ * same-size squares. Computed once from a fixed seed off the `images`
+ * prop (see LAYOUT_SEED), so it's stable across re-renders and
+ * identical in both halves of the marquee's back-to-back loop. */
+function buildColumnLayout(images: AuthGalleryImage[]): ColumnLayout[] {
   if (images.length === 0) return [];
 
   const random = mulberry32(LAYOUT_SEED);
-  const repeats = Math.ceil(MIN_TILES / images.length);
+
+  // Decide the single/double sequence first, so we know exactly how
+  // many images it needs before slicing the repeated list.
+  const columnTypes: ("single" | "double")[] = [];
+  while (columnTypes.length < MIN_COLUMNS) {
+    const runLength = 2 + Math.floor(random() * 2); // 2 or 3 singles...
+    for (let i = 0; i < runLength && columnTypes.length < MIN_COLUMNS; i++) columnTypes.push("single");
+    if (columnTypes.length < MIN_COLUMNS) columnTypes.push("double"); // ...then one double column
+  }
+
+  const neededImages = columnTypes.reduce((sum, t) => sum + (t === "double" ? 2 : 1), 0);
+  const repeats = Math.ceil(neededImages / images.length);
   const flat = Array.from({ length: repeats }, () => images).flat();
 
-  const layout: TileLayout[] = [];
+  const layout: ColumnLayout[] = [];
+  let cursor = 0;
   let runKey: string | null = null;
   let runLength = 0;
 
-  for (let i = 0; i < MIN_TILES; i++) {
-    const image = flat[i % flat.length];
+  for (const type of columnTypes) {
+    if (type === "double") {
+      const a = flat[cursor % flat.length];
+      cursor++;
+      const b = flat[cursor % flat.length];
+      cursor++;
+      layout.push({ type: "double", images: [a, b], heightPct: DOUBLE_TILE_HEIGHT_PCT });
+      continue;
+    }
+
+    const image = flat[cursor % flat.length];
+    cursor++;
     const aspect = pickAspectForImage(image, random, runLength >= 2 ? runKey : null);
     if (aspect.key === runKey) {
       runLength++;
@@ -135,33 +172,48 @@ function buildTileLayout(images: AuthGalleryImage[]): TileLayout[] {
       runKey = aspect.key;
       runLength = 1;
     }
-
-    const heightPct = pickHeightPct(random);
-    const gapPx = 14 + Math.round(random() * 22); // ~14-36px, varies tile-to-tile
-
-    layout.push({ image, aspect, heightPct, gapPx });
+    layout.push({ type: "single", image, aspect, heightPct: pickHeightPct(random) });
   }
 
   return layout;
 }
 
-function GalleryTile({ layout }: { layout: TileLayout }) {
-  const { image, aspect, heightPct, gapPx } = layout;
+function TileBox({ image, aspect, heightPct }: { image: AuthGalleryImage; aspect: string; heightPct: number }) {
   return (
-    <div className="flex h-full shrink-0 items-end" style={{ marginRight: `${gapPx}px` }}>
-      <div
-        className="relative overflow-hidden rounded-2xl border border-cyan-400/60"
-        style={{
-          height: `calc(${heightPct}% * var(--shape-scale, 1))`,
-          aspectRatio: aspect.aspect,
-          boxShadow: "0 0 14px rgba(45, 212, 191, 0.22)",
-        }}
-      >
-        {/* eslint-disable-next-line @next/next/no-img-element -- admin-managed public URLs (Storage public bucket or static /auth/gallery asset); eager-loaded on purpose, see component docstring */}
-        <img src={image.imageUrl} alt="" aria-hidden="true" className="size-full object-cover" decoding="async" />
-        {/* Subtle bottom fade only — never dark enough to obscure most of the photo. */}
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-1/4 bg-gradient-to-t from-black/25 to-transparent" />
+    <div
+      className="relative overflow-hidden rounded-2xl border border-cyan-400/60"
+      style={{
+        height: `calc(${heightPct}% * var(--shape-scale, 1))`,
+        aspectRatio: aspect,
+        boxShadow: "0 0 14px rgba(45, 212, 191, 0.22)",
+      }}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element -- admin-managed public URLs (Storage public bucket or static /auth/gallery asset); eager-loaded on purpose, see component docstring */}
+      <img src={image.imageUrl} alt="" aria-hidden="true" className="size-full object-cover" decoding="async" />
+      {/* Subtle bottom fade only — never dark enough to obscure most of the photo. */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-1/4 bg-gradient-to-t from-black/25 to-transparent" />
+    </div>
+  );
+}
+
+// The fixed, mobile-scaled gap applied after every column — same value
+// whether the column to its left/right is single or double, which is
+// what keeps edge-to-edge spacing uniform across the whole strip.
+const columnGapStyle: React.CSSProperties = { marginRight: `calc(${GAP_PX}px * var(--shape-scale, 1))` };
+
+function GalleryColumn({ column }: { column: ColumnLayout }) {
+  if (column.type === "single") {
+    return (
+      <div className="flex h-full shrink-0 items-end" style={columnGapStyle}>
+        <TileBox image={column.image} aspect={column.aspect.aspect} heightPct={column.heightPct} />
       </div>
+    );
+  }
+
+  return (
+    <div className="flex h-full shrink-0 flex-col items-center justify-end gap-3" style={columnGapStyle}>
+      <TileBox image={column.images[0]} aspect={SQUARE_ASPECT.aspect} heightPct={column.heightPct} />
+      <TileBox image={column.images[1]} aspect={SQUARE_ASPECT.aspect} heightPct={column.heightPct} />
     </div>
   );
 }
@@ -183,36 +235,39 @@ function GalleryTile({ layout }: { layout: TileLayout }) {
  * already handled globally in globals.css (collapses every animation to
  * a single frame), so no separate reduced-motion branch is needed here.
  *
- * Every tile is bottom-aligned (`items-end`, no vertical centering or
- * offset) and has its own height picked independently of its aspect
- * ratio (MIN_HEIGHT_PCT..MAX_HEIGHT_PCT) — this is what produces the
- * reference's uneven skyline/bar-chart silhouette, flush with the
- * bottom of the band and reaching close to its top at the tallest
- * points, rather than a row of tiles vertically centered with empty
- * space above and below all of them. Aspect assignment prefers
+ * The strip is a sequence of COLUMNS, each either a single tile or a
+ * double column (two equal-size square tiles stacked, gap-3 between
+ * them) — buildColumnLayout inserts a double column after every run of
+ * 2-3 singles. Every column (whichever kind) is bottom-aligned and
+ * separated from its neighbor by the exact same GAP_PX, so edge-to-edge
+ * spacing never varies by column size or type. Single-column height
+ * varies independently of its aspect ratio (MIN_HEIGHT_PCT..
+ * MAX_HEIGHT_PCT) for the skyline silhouette; aspect assignment prefers
  * whichever option is closest to the image's own stored aspect ratio
  * (pickAspectForImage) rather than a pure blind pick — a small icon-
  * style illustration on a mostly-empty canvas forced into a very
  * different aspect ratio can get `object-cover`-cropped down to just
  * its plain background, which reads as an empty tile even though an
- * image is technically there. Real photos only — every tile renders
- * the admin's actual `imageUrl`, never a drawn shape/icon in its place.
+ * image is technically there. Real photos only — every tile renders the
+ * admin's actual `imageUrl`, never a drawn shape/icon in its place.
  * Images are NOT lazy-loaded: every tile is "above the fold" from the
- * first frame by construction (buildTileLayout pre-fills the whole
+ * first frame by construction (buildColumnLayout pre-fills the whole
  * width), so lazy-loading them would just mean a visible pop-in instead
  * of starting fully populated — the explicit requirement that the
  * gallery never starts empty. Tile layout size comes entirely from CSS
  * (percentage height + aspect-ratio), never from the image's own
  * intrinsic size, so there's no layout shift as each `<img>` finishes
- * loading. On narrow (mobile) viewports every tile shrinks together via
- * the `--shape-scale` CSS custom property (0.78 under `max-sm:`) —
- * shrinking only ever reduces how close the tallest tiles get to the
- * top of the band, it can never cause overlap or overflow since every
- * tile stays anchored to the same bottom edge.
+ * loading. On narrow (mobile) viewports every tile AND the gap between
+ * columns shrink together via the `--shape-scale` CSS custom property
+ * (0.78 under `max-sm:`) — spacing stays proportionally even, and since
+ * every column still anchors to the same bottom edge, shrinking can
+ * never cause overlap or page-level horizontal overflow (the strip
+ * itself scrolls inside its own `overflow-hidden` ancestors, same as
+ * before).
  */
 export function AuthGallery({ images, className }: { images: AuthGalleryImage[]; className?: string }) {
   const rootRef = useRef<HTMLDivElement>(null);
-  const tiles = useMemo(() => buildTileLayout(images), [images]);
+  const columns = useMemo(() => buildColumnLayout(images), [images]);
 
   useEffect(() => {
     const el = rootRef.current;
@@ -225,7 +280,7 @@ export function AuthGallery({ images, className }: { images: AuthGalleryImage[];
     return () => document.removeEventListener("visibilitychange", onVisibility);
   }, []);
 
-  if (tiles.length === 0) return null;
+  if (columns.length === 0) return null;
 
   return (
     <div ref={rootRef} aria-hidden="true" className={cn("group/gallery overflow-hidden max-sm:[--shape-scale:0.78]", className)}>
@@ -234,7 +289,7 @@ export function AuthGallery({ images, className }: { images: AuthGalleryImage[];
          * point is invisible — same technique as dashboard-marquee.tsx, just
          * played in `reverse` so it moves left-to-right instead of
          * right-to-left. Both copies are already fully built
-         * (buildTileLayout), so the very first frame is already a
+         * (buildColumnLayout), so the very first frame is already a
          * completely filled band, not an empty one animating into view. */}
         <div
           className="marquee-row flex h-full w-max items-end animate-marquee [animation-direction:reverse] group-hover/gallery:[animation-play-state:paused]"
@@ -242,8 +297,8 @@ export function AuthGallery({ images, className }: { images: AuthGalleryImage[];
         >
           {[0, 1].map((copy) => (
             <div key={copy} className="flex h-full shrink-0 items-end">
-              {tiles.map((layout, i) => (
-                <GalleryTile key={`${copy}-${i}`} layout={layout} />
+              {columns.map((column, i) => (
+                <GalleryColumn key={`${copy}-${i}`} column={column} />
               ))}
             </div>
           ))}
