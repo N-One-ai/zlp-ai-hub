@@ -4,14 +4,22 @@
  * to transparent well before their own edge (not a hard-edged blurred
  * circle), so they blend into the page's near-black background rather
  * than reading as a flat colored shape. No grid/texture layer — just
- * the color fields, per explicit "bỏ hoạ tiết lưới" feedback. Confined
- * to the content area
- * ABOVE the gallery band (AuthPageLayout renders this inside that
- * area's own wrapper, not the gallery's), so it never overlaps or
- * alters the gallery's own look/animation. `pointer-events-none` and
- * behind everything (`-z-10`) — purely visual, the form's own
- * `bg-card` surface sits on top and keeps its full contrast regardless
- * of what color is behind it.
+ * the color fields, per explicit "bỏ hoạ tiết lưới" feedback.
+ *
+ * Rendered once on AuthPageLayout's OUTERMOST wrapper, `absolute
+ * inset-0 -z-10` — spans the full page height, including behind the
+ * gallery band, not just the area above it. An earlier version
+ * confined this to the content area above the gallery, which left
+ * nothing but flat `--background` behind the gallery itself and
+ * produced a visible seam where the gradient-lit top met the plain
+ * black bottom; letting it span the whole page removes that seam so
+ * the page's gradient reads as one continuous field, visible through
+ * the gaps between gallery tiles and around the band the same way it
+ * shows behind the form. `pointer-events-none` so it never intercepts
+ * clicks, and `-z-10` keeps it behind both the form and the gallery
+ * regardless of DOM order — the form's own `bg-card` surface and the
+ * gallery's own opaque tiles both sit on top, so contrast and the
+ * gallery's look are unaffected by what color is behind them.
  */
 export function AuthBackdrop() {
   return (
