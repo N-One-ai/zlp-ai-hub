@@ -185,11 +185,10 @@ function buildColumnLayout(images: AuthGalleryImage[]): ColumnLayout[] {
 function TileBox({ image, aspect, heightPct }: { image: AuthGalleryImage; aspect: string; heightPct: number }) {
   return (
     <div
-      className="relative overflow-hidden rounded-2xl border border-[#95e6de]/70"
+      className="relative overflow-hidden rounded-2xl"
       style={{
         height: `calc(${heightPct}% * var(--shape-scale, 1))`,
         aspectRatio: aspect,
-        boxShadow: "0 0 14px rgba(149, 230, 222, 0.25)",
       }}
     >
       {/* eslint-disable-next-line @next/next/no-img-element -- admin-managed public URLs (Storage public bucket or static /auth/gallery asset); eager-loaded on purpose, see component docstring */}
