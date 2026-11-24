@@ -33,10 +33,23 @@ import { AuthBackdrop } from "./auth-backdrop";
  * the theme is ever switched to light. Rendered after <AuthGallery> in
  * the DOM so it paints on top without needing an explicit z-index.
  *
- * <AuthBackdrop> is the big soft color-field glow behind the form (see
- * that file) — rendered inside the top content wrapper only, so it's
- * confined above the gallery band and never overlaps or alters the
- * gallery's own look/animation.
+ * <AuthBackdrop> (the big soft color-field glow, see that file) is
+ * rendered ONCE here, on the outermost wrapper — not inside the top
+ * content div — specifically so it spans the FULL page height,
+ * including behind the gallery band. Confining it to only the area
+ * above the gallery (an earlier version did this) left the gallery's
+ * own region showing nothing but the page's flat `--background` with
+ * no gradient reaching it at all — a visible seam/hard rectangle where
+ * the gradient-lit top area met the plain-black bottom area, which is
+ * exactly the "dải đen" this was reported against. Neither the gallery
+ * band's own wrapper nor <AuthGallery>'s internal containers set an
+ * opaque background, so with the backdrop now behind the whole page,
+ * its color shows through normally in the gaps between tiles and
+ * around the band, same as it does behind the form above. Everything
+ * about the gallery itself — tiles, stroke, spacing, column heights,
+ * animation/speed — is untouched; only what's visible *around* it
+ * changes. `-z-10` keeps it behind both the form content and the
+ * gallery regardless of DOM order.
  */
 export async function AuthPageLayout({ children }: { children: React.ReactNode }) {
   const [images, settings] = await Promise.all([getActiveAuthGalleryImages(), getAuthGallerySettings()]);
@@ -44,10 +57,8 @@ export async function AuthPageLayout({ children }: { children: React.ReactNode }
 
   return (
     <div className="relative flex min-h-svh flex-col overflow-hidden">
-      <div className="relative flex flex-1 items-center justify-center overflow-hidden px-4 py-8">
-        <AuthBackdrop />
-        {children}
-      </div>
+      <AuthBackdrop />
+      <div className="relative flex flex-1 items-center justify-center overflow-hidden px-4 py-8">{children}</div>
       {showGallery && (
         <div className="relative h-[26vh] min-h-[170px] shrink-0 sm:h-[36vh] md:h-[42vh] lg:h-[45vh]">
           <AuthGallery images={images} className="absolute inset-0" />
