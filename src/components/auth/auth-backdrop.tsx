@@ -3,7 +3,9 @@
  * AuthPageLayout) — large, soft radial-gradient color fields that fade
  * to transparent well before their own edge (not a hard-edged blurred
  * circle), so they blend into the page's near-black background rather
- * than reading as a flat colored shape. Confined to the content area
+ * than reading as a flat colored shape. No grid/texture layer — just
+ * the color fields, per explicit "bỏ hoạ tiết lưới" feedback. Confined
+ * to the content area
  * ABOVE the gallery band (AuthPageLayout renders this inside that
  * area's own wrapper, not the gallery's), so it never overlaps or
  * alters the gallery's own look/animation. `pointer-events-none` and
@@ -14,16 +16,6 @@
 export function AuthBackdrop() {
   return (
     <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
-      {/* Faint grid texture for depth — opacity kept low enough that it
-       * never competes with text contrast. */}
-      <div
-        className="absolute inset-0 opacity-[0.05]"
-        style={{
-          backgroundImage:
-            "linear-gradient(to right, white 1px, transparent 1px), linear-gradient(to bottom, white 1px, transparent 1px)",
-          backgroundSize: "28px 28px",
-        }}
-      />
       {/* Green field — left */}
       <div
         className="absolute -left-40 -top-40 size-[42rem] rounded-full opacity-35 blur-3xl max-sm:size-[26rem] max-sm:opacity-20"
