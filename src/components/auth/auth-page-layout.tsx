@@ -1,5 +1,6 @@
 import { getActiveAuthGalleryImages, getAuthGallerySettings } from "@/lib/auth-gallery/queries";
 import { AuthGallery } from "./auth-gallery";
+import { AuthBackdrop } from "./auth-backdrop";
 
 /**
  * Shared layout for /login and /register — fetches the admin-managed
@@ -31,6 +32,11 @@ import { AuthGallery } from "./auth-gallery";
  * `bg-background` (not a literal black) so this still looks correct if
  * the theme is ever switched to light. Rendered after <AuthGallery> in
  * the DOM so it paints on top without needing an explicit z-index.
+ *
+ * <AuthBackdrop> is the big soft color-field glow behind the form (see
+ * that file) — rendered inside the top content wrapper only, so it's
+ * confined above the gallery band and never overlaps or alters the
+ * gallery's own look/animation.
  */
 export async function AuthPageLayout({ children }: { children: React.ReactNode }) {
   const [images, settings] = await Promise.all([getActiveAuthGalleryImages(), getAuthGallerySettings()]);
@@ -38,7 +44,10 @@ export async function AuthPageLayout({ children }: { children: React.ReactNode }
 
   return (
     <div className="relative flex min-h-svh flex-col overflow-hidden">
-      <div className="flex flex-1 items-center justify-center overflow-hidden px-4 py-8">{children}</div>
+      <div className="relative flex flex-1 items-center justify-center overflow-hidden px-4 py-8">
+        <AuthBackdrop />
+        {children}
+      </div>
       {showGallery && (
         <div className="relative h-[26vh] min-h-[170px] shrink-0 sm:h-[36vh] md:h-[42vh] lg:h-[45vh]">
           <AuthGallery images={images} className="absolute inset-0" />
