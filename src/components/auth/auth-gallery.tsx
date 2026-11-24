@@ -14,15 +14,22 @@ const DURATION_SECONDS = 112;
 // as dashboard-marquee.tsx's own REPEAT_COUNT — a short admin-configured
 // image list (as few as 2) still needs to tile out far past 100vw before
 // the loop's 50% duplicate boundary, or the band would show a gap on a
-// wide screen while still catching up to a full row.
-const MIN_COLUMNS = 26;
+// wide screen while still catching up to a full row. Bumped 26 -> 33
+// (26 / 0.8) alongside the 20% gallery shrink — each column is now ~20%
+// narrower too, so more of them are needed to cover the same absolute
+// track width and keep the same overflow safety margin.
+const MIN_COLUMNS = 33;
 
 // Every column (single tile or double-stack) is separated from its
 // neighbor by this exact gap, measured edge-to-edge — "khoảng cách...
 // phải bằng nhau... tính theo mép thẻ, không theo tâm". No per-column
 // jitter anymore: a fixed gap is what makes every column, regardless of
 // its own width or whether it's a single/double, read as evenly spaced.
-const GAP_PX = 22;
+// 17.6 = 22 * 0.8, shrunk alongside the whole gallery (see
+// AuthPageLayout's band height) for the explicit "thu nhỏ khoảng 20%"
+// request — spacing scales down with the tiles instead of looking
+// proportionally wider once they're smaller.
+const GAP_PX = 17.6;
 
 // Fixed seed (never Math.random()) so the column-type / aspect / height
 // sequence below is identical on the server-rendered HTML and the client
