@@ -13,11 +13,17 @@ import { AuthBackdrop } from "./auth-backdrop";
  * reserved bottom band — not the full viewport — which is what "pushes
  * the form up" so the gallery band at the bottom is always fully
  * visible, never cropped or covered. Gallery height is a chunk of the
- * viewport height on larger screens (≈40-45%, per spec) and a smaller,
- * fixed-minimum chunk on mobile, where AuthGallery also shrinks every
- * tile (via its own `--shape-scale` custom property) so the varied
- * card sizes stay comfortably inside the shorter band instead of
- * crowding or clipping it.
+ * viewport height on larger screens (≈32-36%, 20% smaller than the
+ * original ≈40-45% per an explicit "ảnh đang quá lớn, thu nhỏ khoảng
+ * 20%" request) and a smaller, fixed-minimum chunk on mobile, where
+ * AuthGallery also shrinks every tile further still (via its own
+ * `--shape-scale` custom property) so the varied card sizes stay
+ * comfortably inside the shorter band instead of crowding or clipping
+ * it. Every tile's own height is a PERCENTAGE of this band's height
+ * (see auth-gallery.tsx), so shrinking the band here is what shrinks
+ * the whole gallery proportionally — tiles, bottom-aligned spacing and
+ * all — rather than leaving the tiles floating in extra empty space
+ * inside an unchanged-size band.
  *
  * When there are no active gallery images (or the admin has disabled
  * the gallery), this band isn't rendered at all — that *is* the
@@ -60,7 +66,7 @@ export async function AuthPageLayout({ children }: { children: React.ReactNode }
       <AuthBackdrop />
       <div className="relative flex flex-1 items-center justify-center overflow-hidden px-4 py-8">{children}</div>
       {showGallery && (
-        <div className="relative h-[26vh] min-h-[170px] shrink-0 sm:h-[36vh] md:h-[42vh] lg:h-[45vh]">
+        <div className="relative h-[20.8vh] min-h-[136px] shrink-0 sm:h-[28.8vh] md:h-[33.6vh] lg:h-[36vh]">
           <AuthGallery images={images} className="absolute inset-0" />
           <div className="pointer-events-none absolute inset-x-0 bottom-0 h-1/5 bg-gradient-to-t from-background to-transparent" />
         </div>
