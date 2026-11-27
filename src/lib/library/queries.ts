@@ -57,9 +57,10 @@ export async function getLibraryAssets(workspaceId: string, filters: LibraryFilt
 
   let query = supabase
     .from("creative_assets")
-    .select("id, type, name, brand_id, campaign, status, owner_id, storage_path, created_at, brands(name), profiles(name, email)", {
-      count: "exact",
-    })
+    .select(
+      "id, type, name, brand_id, campaign, status, owner_id, storage_path, created_at, brands(name), profiles!creative_assets_owner_id_fkey(name, email)",
+      { count: "exact" }
+    )
     .eq("workspace_id", workspaceId);
 
   if (filters.type) query = query.eq("type", filters.type);
@@ -131,7 +132,7 @@ export async function getAssetDetail(assetId: string): Promise<LibraryAssetDetai
   const { data, error } = await supabase
     .from("creative_assets")
     .select(
-      "id, type, name, brand_id, campaign, status, owner_id, storage_path, width, height, prompt, tags, created_at, brands(name), profiles(name, email), generation_jobs(requested_model, final_model, params, character_id)"
+      "id, type, name, brand_id, campaign, status, owner_id, storage_path, width, height, prompt, tags, created_at, brands(name), profiles!creative_assets_owner_id_fkey(name, email), generation_jobs(requested_model, final_model, params, character_id)"
     )
     .eq("id", assetId)
     .maybeSingle();
