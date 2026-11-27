@@ -10,6 +10,33 @@ function sanitizeSearchTerm(raw: string): string {
   return raw.replace(/[,()]/g, "").replace(/[%_]/g, (c) => `\\${c}`);
 }
 
+/** Which of the given asset ids the CURRENT user has favorited (see
+ * migration 0017_asset_favorites.sql) — a plain personal bookmark, so
+ * this is always scoped to whoever is actually making the request, read
+ * fresh off auth.uid() rather than threaded through every call site.
+ * Returns an empty set (never an error) when there's no session or no
+ * ids to check, same fail-closed convention as every other query here. */
+async function getFavoritedAssetIds(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  assetIds: string[]
+): Promise<Set<string>> {
+  if (assetIds.length === 0) return new Set();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return new Set();
+
+  const { data, error } = await supabase.from("asset_favorites").select("asset_id").eq("user_id", user.id).in("asset_id", assetIds);
+
+  if (error) {
+    console.error("[getFavoritedAssetIds]", error);
+    return new Set();
+  }
+
+  return new Set((data ?? []).map((row) => row.asset_id as string));
+}
+
 export interface LibraryPage {
   assets: LibraryAssetListItem[];
   total: number;
@@ -69,6 +96,8 @@ export async function getLibraryAssets(workspaceId: string, filters: LibraryFilt
     profiles: { name: string | null; email: string } | null;
   }[];
 
+  const favoritedIds = await getFavoritedAssetIds(supabase, rows.map((r) => r.id));
+
   const assets = await Promise.all(
     rows.map(async (row) => ({
       id: row.id,
@@ -82,6 +111,7 @@ export async function getLibraryAssets(workspaceId: string, filters: LibraryFilt
       ownerName: row.profiles?.name || row.profiles?.email || "—",
       thumbnailUrl: await resolveSignedAssetUrl(supabase, row.storage_path),
       createdAt: row.created_at,
+      isFavorited: favoritedIds.has(row.id),
     }))
   );
 
@@ -135,6 +165,8 @@ export async function getAssetDetail(assetId: string): Promise<LibraryAssetDetai
     } | null;
   };
 
+  const favoritedIds = await getFavoritedAssetIds(supabase, [row.id]);
+
   let versions: LibraryAssetDetail["versions"] = [];
   if (row.type === "banner") {
     const { data: docs } = await supabase
@@ -157,6 +189,7 @@ export async function getAssetDetail(assetId: string): Promise<LibraryAssetDetai
     ownerName: row.profiles?.name || row.profiles?.email || "—",
     thumbnailUrl: await resolveSignedAssetUrl(supabase, row.storage_path),
     fileUrl: await resolveSignedAssetUrl(supabase, row.storage_path),
+    isFavorited: favoritedIds.has(row.id),
     isCharacterAsset: row.generation_jobs?.character_id != null,
     prompt: row.prompt,
     width: row.width,

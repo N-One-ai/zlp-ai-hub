@@ -12,6 +12,10 @@ export interface LibraryAssetListItem {
   ownerName: string;
   thumbnailUrl: string | null;
   createdAt: string;
+  /** The CURRENT user's own favorite bookmark on this asset (see
+   * migration 0017_asset_favorites.sql) — never a workspace-wide flag,
+   * so this differs per viewer. */
+  isFavorited: boolean;
 }
 
 export interface LibraryAssetDetail extends LibraryAssetListItem {
