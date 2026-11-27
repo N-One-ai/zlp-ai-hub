@@ -78,19 +78,39 @@ function NoPreview({ type }: { type: LibraryAssetListItem["type"] }) {
   );
 }
 
+/** Default cover art for voice/audio assets, which have no cover-image
+ * field of their own (storage_path is the audio file itself — there's
+ * nothing to show an <img> of). Project asset, not a generated/similar
+ * stand-in. */
+const AUDIO_THUMB_BG_URL = "/assets/voice-asset-cover.jpg";
+
 /** Audio has no visual thumbnail at all — the file itself (thumbnailUrl,
  * same signed storage_path URL every other type reuses for its preview)
  * is only ever meant to be <audio>'d, never <img>'d. Rendering it through
  * AssetThumb's generic <img> path would make a perfectly fine mp3 file
- * show up as a false "ảnh lỗi", which is worse than just never trying. */
+ * show up as a false "ảnh lỗi", which is worse than just never trying.
+ * Every voice asset today shares the same default cover background
+ * (AUDIO_THUMB_BG_URL) — this data model has no separate cover-image
+ * field to prefer instead, so this applies whenever there's actually an
+ * audio file to show a card for. */
 function AudioThumb({ asset, className }: { asset: LibraryAssetListItem; className?: string }) {
-  return (
-    <div className={cn("flex items-center justify-center overflow-hidden bg-muted/40", className)}>
-      {asset.thumbnailUrl ? (
-        <Music className="size-6 text-primary" />
-      ) : (
+  if (!asset.thumbnailUrl) {
+    return (
+      <div className={cn("flex items-center justify-center overflow-hidden bg-muted/40", className)}>
         <NoPreview type={asset.type} />
-      )}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={cn("relative flex items-center justify-center overflow-hidden bg-cover bg-center", className)}
+      style={{ backgroundImage: `url(${AUDIO_THUMB_BG_URL})` }}
+    >
+      <Music
+        className="relative text-success drop-shadow-[0_1px_3px_rgba(0,0,0,0.45)]"
+        style={{ width: "30%", height: "30%", minWidth: 18, minHeight: 18, maxWidth: 56, maxHeight: 56 }}
+      />
     </div>
   );
 }
