@@ -112,7 +112,7 @@ export default async function DashboardPage() {
 
       <div className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
-          <h2 className="font-heading text-base font-semibold">Tài sản gần đây</h2>
+          <h2 className="font-heading text-base font-semibold">Đã tạo gần đây</h2>
           {recentAssets.length > 0 && (
             <Link href="/library" className="text-sm font-medium text-primary hover:underline">
               Xem tất cả →

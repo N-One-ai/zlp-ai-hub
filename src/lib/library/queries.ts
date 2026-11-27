@@ -58,7 +58,7 @@ export async function getLibraryAssets(workspaceId: string, filters: LibraryFilt
   let query = supabase
     .from("creative_assets")
     .select(
-      "id, type, name, brand_id, campaign, status, owner_id, storage_path, created_at, brands(name), profiles!creative_assets_owner_id_fkey(name, email)",
+      "id, type, name, brand_id, campaign, status, owner_id, storage_path, width, height, created_at, brands(name), profiles!creative_assets_owner_id_fkey(name, email)",
       { count: "exact" }
     )
     .eq("workspace_id", workspaceId);
@@ -92,6 +92,8 @@ export async function getLibraryAssets(workspaceId: string, filters: LibraryFilt
     status: LibraryAssetListItem["status"];
     owner_id: string | null;
     storage_path: string | null;
+    width: number | null;
+    height: number | null;
     created_at: string;
     brands: { name: string } | null;
     profiles: { name: string | null; email: string } | null;
@@ -113,6 +115,8 @@ export async function getLibraryAssets(workspaceId: string, filters: LibraryFilt
       thumbnailUrl: await resolveSignedAssetUrl(supabase, row.storage_path),
       createdAt: row.created_at,
       isFavorited: favoritedIds.has(row.id),
+      width: row.width,
+      height: row.height,
     }))
   );
 

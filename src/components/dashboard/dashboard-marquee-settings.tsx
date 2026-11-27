@@ -76,7 +76,7 @@ export function DashboardMarqueeSettings({ workspaceId, marquee }: { workspaceId
       <div>
         <h2 className="font-heading text-base font-semibold">Dải chữ chạy</h2>
         <p className="text-sm text-muted-foreground">
-          Thay cho hàng chỉ số cũ trên Dashboard — chạy liên tục giữa banner/thẻ chức năng và Tài sản gần đây.
+          Thay cho hàng chỉ số cũ trên Dashboard — chạy liên tục giữa banner/thẻ chức năng và Đã tạo gần đây.
         </p>
       </div>
 
