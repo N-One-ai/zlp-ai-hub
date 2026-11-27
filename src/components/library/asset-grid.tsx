@@ -355,7 +355,7 @@ function CompactGridCard({
     <Link
       href={`/library/${asset.id}`}
       style={{ aspectRatio }}
-      className="group relative block h-40 shrink-0 overflow-hidden outline-none transition-transform hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-ring sm:h-48 md:h-56 lg:h-64 xl:h-72"
+      className="group relative block h-28 shrink-0 overflow-hidden outline-none transition-transform hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-ring sm:h-32 md:h-36 lg:h-40 xl:h-44"
     >
       <AssetThumb
         asset={asset}
