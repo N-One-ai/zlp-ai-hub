@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -337,6 +337,9 @@ function CompactGridCard({
   onToggleFavorite,
   onRequestDelete,
   onRequestRename,
+  ratio,
+  height,
+  onNaturalSize,
 }: {
   asset: LibraryAssetListItem;
   canDelete: boolean;
@@ -345,25 +348,21 @@ function CompactGridCard({
   onToggleFavorite: () => void;
   onRequestDelete: (asset: LibraryAssetListItem) => void;
   onRequestRename: (asset: LibraryAssetListItem) => void;
+  /** Clamped aspect ratio and shared row height, both computed a level up
+   * by CompactAssetGrid's justified-row layout — every tile in a row
+   * shares `height`; width falls out of the CSS `aspect-ratio` property
+   * (width = height × ratio) with no JS layout math needed per tile. */
+  ratio: number;
+  height: number;
+  onNaturalSize: (width: number, height: number) => void;
 }) {
-  const knownRatio = asset.width && asset.height ? asset.width / asset.height : null;
-  const [measuredRatio, setMeasuredRatio] = useState<number | null>(null);
-  const rawRatio = knownRatio ?? measuredRatio ?? 1;
-  const aspectRatio = Math.min(COMPACT_MAX_RATIO, Math.max(COMPACT_MIN_RATIO, rawRatio));
-
   return (
     <Link
       href={`/library/${asset.id}`}
-      style={{ aspectRatio }}
-      className="group relative block h-28 shrink-0 overflow-hidden outline-none transition-transform hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-ring sm:h-32 md:h-36 lg:h-40 xl:h-44"
+      style={{ aspectRatio: ratio, height }}
+      className="group relative block shrink-0 overflow-hidden outline-none transition-transform hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-ring"
     >
-      <AssetThumb
-        asset={asset}
-        className="size-full"
-        onNaturalSize={(width, height) => {
-          if (!knownRatio) setMeasuredRatio(width / height);
-        }}
-      />
+      <AssetThumb asset={asset} className="size-full" onNaturalSize={onNaturalSize} />
 
       <div className="absolute top-1.5 right-1.5">
         <FavoriteButton isFavorited={isFavorited} onToggle={onToggleFavorite} />
@@ -389,6 +388,177 @@ function CompactGridCard({
         />
       </div>
     </Link>
+  );
+}
+
+/** Target row height (px) for the compact grid's justified-row layout, at
+ * the same breakpoints the prior h-28..h-44 Tailwind classes used —
+ * tracked via window.innerWidth rather than a container query so it
+ * keeps matching viewport-based breakpoints, not the (often narrower)
+ * content column. */
+const COMPACT_HEIGHT_BREAKPOINTS = [
+  { minWidth: 1280, height: 176 },
+  { minWidth: 1024, height: 160 },
+  { minWidth: 768, height: 144 },
+  { minWidth: 640, height: 128 },
+  { minWidth: 0, height: 112 },
+] as const;
+
+function useCompactTargetHeight(): number {
+  const [height, setHeight] = useState(112);
+  useEffect(() => {
+    function update() {
+      const w = window.innerWidth;
+      const match = COMPACT_HEIGHT_BREAKPOINTS.find((b) => w >= b.minWidth);
+      setHeight(match?.height ?? 112);
+    }
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+  return height;
+}
+
+/** Live content-box width of a ref'd element, via ResizeObserver — used
+ * to know exactly how wide a justified row has to stretch to, since that
+ * isn't derivable from a Tailwind breakpoint (the content column itself
+ * can be narrower than the viewport). */
+function useMeasuredWidth<T extends HTMLElement>() {
+  const ref = useRef<T | null>(null);
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    setWidth(el.getBoundingClientRect().width);
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry) setWidth(entry.contentRect.width);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  return [ref, width] as const;
+}
+
+const COMPACT_GAP = 4; // matches the row/column gap-1 (0.25rem) below
+
+/** A completed row is stretched so its tiles' combined width exactly
+ * fills the container — classic "justified gallery" layout — but never
+ * beyond these bounds, so a row of unusually wide or narrow images
+ * doesn't balloon or shrink tiles to an awkward size. */
+const COMPACT_ROW_STRETCH_MIN = 0.75;
+const COMPACT_ROW_STRETCH_MAX = 1.3;
+
+type RatioedAsset = { asset: LibraryAssetListItem; ratio: number };
+
+/** Greedily packs assets into rows at `targetHeight`, closing a row (and
+ * stretching it to exactly fill `containerWidth`) as soon as the next
+ * asset would overflow it. The trailing remainder that never fills a row
+ * is left at `targetHeight`, unstretched — so only a genuinely-partial
+ * final row is left-aligned with open space; every earlier row fills the
+ * full width. */
+function computeJustifiedRows(
+  items: RatioedAsset[],
+  containerWidth: number,
+  targetHeight: number,
+  gap: number
+): { items: RatioedAsset[]; height: number }[] {
+  if (containerWidth <= 0) {
+    return items.map((item) => ({ items: [item], height: targetHeight }));
+  }
+
+  const rows: { items: RatioedAsset[]; height: number }[] = [];
+  let row: RatioedAsset[] = [];
+  let ratioSum = 0;
+
+  for (const item of items) {
+    row.push(item);
+    ratioSum += item.ratio;
+    const widthAtTarget = ratioSum * targetHeight + gap * (row.length - 1);
+    if (widthAtTarget >= containerWidth) {
+      const widthForImages = containerWidth - gap * (row.length - 1);
+      const rawHeight = widthForImages / ratioSum;
+      const height = Math.min(
+        targetHeight * COMPACT_ROW_STRETCH_MAX,
+        Math.max(targetHeight * COMPACT_ROW_STRETCH_MIN, rawHeight)
+      );
+      rows.push({ items: row, height });
+      row = [];
+      ratioSum = 0;
+    }
+  }
+  if (row.length > 0) rows.push({ items: row, height: targetHeight });
+
+  return rows;
+}
+
+/** Dashboard's "Đã tạo gần đây" compact grid — a justified-row layout
+ * (the same idea as Google Photos/Flickr) so completed rows stretch to
+ * use the full content width instead of leaving a gap when the next
+ * tile doesn't fit at the target height. Only the trailing,
+ * genuinely-partial row is left unstretched (see computeJustifiedRows). */
+function CompactAssetGrid({
+  assets,
+  canDelete,
+  isPending,
+  favoriteIds,
+  onToggleFavorite,
+  onRequestDelete,
+  onRequestRename,
+}: {
+  assets: LibraryAssetListItem[];
+  canDelete: (asset: LibraryAssetListItem) => boolean;
+  isPending: boolean;
+  favoriteIds: Set<string>;
+  onToggleFavorite: (asset: LibraryAssetListItem) => void;
+  onRequestDelete: (asset: LibraryAssetListItem) => void;
+  onRequestRename: (asset: LibraryAssetListItem) => void;
+}) {
+  const [containerRef, containerWidth] = useMeasuredWidth<HTMLDivElement>();
+  const targetHeight = useCompactTargetHeight();
+  const [measuredRatios, setMeasuredRatios] = useState<Record<string, number>>({});
+
+  const items = useMemo<RatioedAsset[]>(
+    () =>
+      assets.map((asset) => {
+        const known = asset.width && asset.height ? asset.width / asset.height : null;
+        const raw = known ?? measuredRatios[asset.id] ?? 1;
+        return { asset, ratio: Math.min(COMPACT_MAX_RATIO, Math.max(COMPACT_MIN_RATIO, raw)) };
+      }),
+    [assets, measuredRatios]
+  );
+
+  const rows = useMemo(
+    () => computeJustifiedRows(items, containerWidth, targetHeight, COMPACT_GAP),
+    [items, containerWidth, targetHeight]
+  );
+
+  return (
+    <div ref={containerRef} className="flex flex-col gap-1">
+      {rows.map((row, rowIndex) => (
+        <div key={rowIndex} className="flex gap-1">
+          {row.items.map(({ asset, ratio }) => (
+            <CompactGridCard
+              key={asset.id}
+              asset={asset}
+              canDelete={canDelete(asset)}
+              isPending={isPending}
+              isFavorited={favoriteIds.has(asset.id)}
+              onToggleFavorite={() => onToggleFavorite(asset)}
+              onRequestDelete={onRequestDelete}
+              onRequestRename={onRequestRename}
+              ratio={ratio}
+              height={row.height}
+              onNaturalSize={(width, height) => {
+                if (!(asset.width && asset.height)) {
+                  setMeasuredRatios((prev) => ({ ...prev, [asset.id]: width / height }));
+                }
+              }}
+            />
+          ))}
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -567,31 +737,19 @@ export function AssetGrid({
       </div>
 
       {view === "grid" ? (
-        <div
-          className={
-            compact
-              ? // Wrapping flex row, not grid — every tile shares the same
-                // height (set on CompactGridCard) and derives its own width
-                // from the image's real aspect ratio, so tiles naturally
-                // wrap onto the next line as the row runs out of width,
-                // instead of being forced into uniform grid cells.
-                "flex flex-wrap gap-1"
-              : "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4"
-          }
-        >
-          {assets.map((asset) =>
-            compact ? (
-              <CompactGridCard
-                key={asset.id}
-                asset={asset}
-                canDelete={canDelete(asset)}
-                isPending={isPending}
-                isFavorited={favoriteIds.has(asset.id)}
-                onToggleFavorite={() => handleToggleFavorite(asset)}
-                onRequestDelete={setDeleteTarget}
-                onRequestRename={openRename}
-              />
-            ) : (
+        compact ? (
+          <CompactAssetGrid
+            assets={assets}
+            canDelete={canDelete}
+            isPending={isPending}
+            favoriteIds={favoriteIds}
+            onToggleFavorite={handleToggleFavorite}
+            onRequestDelete={setDeleteTarget}
+            onRequestRename={openRename}
+          />
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
+            {assets.map((asset) => (
               <GridCard
                 key={asset.id}
                 asset={asset}
@@ -600,9 +758,9 @@ export function AssetGrid({
                 onRequestDelete={setDeleteTarget}
                 onRequestRename={openRename}
               />
-            )
-          )}
-        </div>
+            ))}
+          </div>
+        )
       ) : (
         <div className="flex flex-col gap-2">
           {assets.map((asset) => (
