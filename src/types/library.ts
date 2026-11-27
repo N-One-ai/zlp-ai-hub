@@ -20,6 +20,15 @@ export interface LibraryAssetDetail extends LibraryAssetListItem {
   height: number | null;
   fileUrl: string | null;
   tags: string[];
+  /** True when this asset came from the "Xây dựng nhân vật" (Character
+   * Builder) flow — derived from the linked generation_jobs row's own
+   * character_id (set by createCharacterSheet in character-actions.ts),
+   * since creative_assets itself has no character_id column. The detail
+   * page uses this to tweak its layout for character portraits only
+   * (hide the prompt block, show the image larger, show time alongside
+   * the date), without touching the shared page for every other asset
+   * type. */
+  isCharacterAsset: boolean;
   /** Design document version history, only populated for type 'banner'. */
   versions: { id: string; version: number; createdAt: string }[];
   /** Which AI model actually produced this asset — null for uploads (no

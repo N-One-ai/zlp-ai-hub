@@ -36,18 +36,33 @@ export default async function AssetDetailPage({ params }: { params: Promise<{ id
 
       <div className="grid lg:grid-cols-[1fr_320px] gap-6">
         <div className="flex flex-col gap-4">
-          <div className="rounded-xl border border-border bg-muted/30 overflow-hidden flex items-center justify-center min-h-64 p-4">
+          <div
+            className={
+              asset.isCharacterAsset
+                ? "rounded-xl border border-border bg-muted/30 overflow-hidden flex items-center justify-center min-h-64 p-2"
+                : "rounded-xl border border-border bg-muted/30 overflow-hidden flex items-center justify-center min-h-64 p-4"
+            }
+          >
             {!asset.fileUrl ? (
               <p className="text-sm text-muted-foreground py-16">Chưa có file.</p>
             ) : asset.type === "audio" ? (
               <audio controls src={asset.fileUrl} className="w-full max-w-md" />
             ) : (
               // eslint-disable-next-line @next/next/no-img-element -- short-lived signed URL
-              <img src={asset.fileUrl} alt={asset.name} className="max-w-full max-h-[70vh] object-contain" />
+              <img
+                src={asset.fileUrl}
+                alt={asset.name}
+                className={asset.isCharacterAsset ? "max-w-full max-h-[85vh] object-contain" : "max-w-full max-h-[70vh] object-contain"}
+              />
             )}
           </div>
 
-          {asset.prompt && (
+          {/* Character portraits hide the Prompt block here (per explicit
+           * request for the Character Builder detail view only — the
+           * prompt data itself is untouched, still fetched/returned by
+           * getAssetDetail, just not rendered) so the image above can use
+           * the freed vertical space (max-h bumped 70vh -> 85vh above). */}
+          {!asset.isCharacterAsset && asset.prompt && (
             <Card>
               <CardHeader>
                 <CardTitle className="text-sm">Prompt</CardTitle>
@@ -93,7 +108,11 @@ export default async function AssetDetailPage({ params }: { params: Promise<{ id
                 <dt className="text-muted-foreground">Người tạo</dt>
                 <dd>{asset.ownerName}</dd>
                 <dt className="text-muted-foreground">Ngày tạo</dt>
-                <dd>{new Date(asset.createdAt).toLocaleDateString("vi-VN")}</dd>
+                <dd>
+                  {new Date(asset.createdAt).toLocaleDateString("vi-VN")}
+                  {asset.isCharacterAsset &&
+                    ` · ${new Date(asset.createdAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}`}
+                </dd>
                 <dt className="text-muted-foreground">Trạng thái</dt>
                 <dd>
                   <Badge className={`${STATUS_STYLE[asset.status]} border-transparent`}>
