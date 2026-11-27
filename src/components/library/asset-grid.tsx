@@ -83,17 +83,9 @@ function NoPreview({ type }: { type: LibraryAssetListItem["type"] }) {
  * is only ever meant to be <audio>'d, never <img>'d. Rendering it through
  * AssetThumb's generic <img> path would make a perfectly fine mp3 file
  * show up as a false "ảnh lỗi", which is worse than just never trying. */
-function AudioThumb({
-  asset,
-  className,
-  style,
-}: {
-  asset: LibraryAssetListItem;
-  className?: string;
-  style?: React.CSSProperties;
-}) {
+function AudioThumb({ asset, className }: { asset: LibraryAssetListItem; className?: string }) {
   return (
-    <div style={style} className={cn("flex items-center justify-center overflow-hidden bg-muted/40", className)}>
+    <div className={cn("flex items-center justify-center overflow-hidden bg-muted/40", className)}>
       {asset.thumbnailUrl ? (
         <Music className="size-6 text-primary" />
       ) : (
@@ -114,12 +106,10 @@ function AudioThumb({
 function AssetThumb({
   asset,
   className,
-  style,
   onNaturalSize,
 }: {
   asset: LibraryAssetListItem;
   className?: string;
-  style?: React.CSSProperties;
   /** Reports the loaded image's real pixel size (only once it actually
    * loads) — used by the compact grid to size a tile to the image's own
    * aspect ratio when that isn't already known from `asset.width`/
@@ -128,11 +118,11 @@ function AssetThumb({
 }) {
   const [state, setState] = useState<"loading" | "loaded" | "error">(asset.thumbnailUrl ? "loading" : "loaded");
 
-  if (asset.type === "audio") return <AudioThumb asset={asset} className={className} style={style} />;
+  if (asset.type === "audio") return <AudioThumb asset={asset} className={className} />;
 
   if (!asset.thumbnailUrl) {
     return (
-      <div style={style} className={cn("flex items-center justify-center overflow-hidden bg-muted/40", className)}>
+      <div className={cn("flex items-center justify-center overflow-hidden bg-muted/40", className)}>
         <NoPreview type={asset.type} />
       </div>
     );
@@ -140,7 +130,7 @@ function AssetThumb({
 
   if (state === "error") {
     return (
-      <div style={style} className={cn("flex items-center justify-center overflow-hidden bg-destructive/5", className)}>
+      <div className={cn("flex items-center justify-center overflow-hidden bg-destructive/5", className)}>
         <div className="flex flex-col items-center gap-1.5 text-destructive/80">
           <AlertTriangle className="size-6" />
           <span className="px-2 text-center text-[11px] font-medium leading-tight">Không tải được ảnh</span>
@@ -150,7 +140,7 @@ function AssetThumb({
   }
 
   return (
-    <div style={style} className={cn("relative flex items-center justify-center overflow-hidden bg-muted/40", className)}>
+    <div className={cn("relative flex items-center justify-center overflow-hidden bg-muted/40", className)}>
       {state === "loading" && <div className="absolute inset-0 animate-pulse bg-muted" />}
       {/* eslint-disable-next-line @next/next/no-img-element -- short-lived signed URL */}
       <img
@@ -314,6 +304,14 @@ function FavoriteButton({ isFavorited, onToggle }: { isFavorited: boolean; onTog
   );
 }
 
+/** Smallest/widest a compact tile's aspect ratio is allowed to render
+ * at — an extremely tall portrait or ultra-wide panorama would otherwise
+ * produce a sliver-thin or row-dominating tile. Clamped tiles fall back
+ * to a centered, letterboxed image (dark neutral bars) instead, which is
+ * the explicitly accepted tradeoff for those outlier ratios. */
+const COMPACT_MIN_RATIO = 0.5;
+const COMPACT_MAX_RATIO = 2.2;
+
 /** Thumbnail-only grid card for Dashboard's "Đã tạo gần đây" (see the
  * `compact` prop on AssetGrid) — just the image, the favorite heart, and
  * the existing actions menu, as overlays on the thumbnail itself. No
@@ -322,13 +320,15 @@ function FavoriteButton({ isFavorited, onToggle }: { isFavorited: boolean; onTog
  * as the full card — nothing about that destination changes, only what
  * the grid tile itself shows.
  *
- * Sized to the image's REAL aspect ratio (never forced square) so the
- * whole image shows uncropped: `asset.width`/`height` are used when the
- * DB already has them, otherwise the tile starts at a square skeleton
- * and snaps to the image's actual ratio once it loads (`onNaturalSize`).
- * Meant to sit inside a CSS multi-column ("masonry") container, where
- * mixed aspect ratios pack tightly without the large gaps a fixed grid
- * would leave — see the `compact` branch in AssetGrid below. */
+ * Every tile shares the same HEIGHT (set by AssetGrid's `compact` row,
+ * via responsive `h-*` classes) and derives its own WIDTH from the
+ * image's real aspect ratio via the CSS `aspect-ratio` property — the
+ * browser computes width = height × ratio with no JS layout pass needed.
+ * `asset.width`/`height` are used when the DB already has them,
+ * otherwise the tile starts square and snaps to the image's actual
+ * ratio once it loads (`onNaturalSize`). Meant to sit inside a
+ * `flex flex-wrap` row, which naturally wraps tiles of different widths
+ * onto the next line as the viewport narrows. */
 function CompactGridCard({
   asset,
   canDelete,
@@ -348,17 +348,18 @@ function CompactGridCard({
 }) {
   const knownRatio = asset.width && asset.height ? asset.width / asset.height : null;
   const [measuredRatio, setMeasuredRatio] = useState<number | null>(null);
-  const aspectRatio = knownRatio ?? measuredRatio ?? 1;
+  const rawRatio = knownRatio ?? measuredRatio ?? 1;
+  const aspectRatio = Math.min(COMPACT_MAX_RATIO, Math.max(COMPACT_MIN_RATIO, rawRatio));
 
   return (
     <Link
       href={`/library/${asset.id}`}
-      className="group relative mb-1 block w-full break-inside-avoid-column outline-none transition-transform hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-ring sm:mb-1.5"
+      style={{ aspectRatio }}
+      className="group relative block h-40 shrink-0 overflow-hidden outline-none transition-transform hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-ring sm:h-48 md:h-56 lg:h-64 xl:h-72"
     >
       <AssetThumb
         asset={asset}
-        className="w-full"
-        style={{ aspectRatio }}
+        className="size-full"
         onNaturalSize={(width, height) => {
           if (!knownRatio) setMeasuredRatio(width / height);
         }}
@@ -569,12 +570,12 @@ export function AssetGrid({
         <div
           className={
             compact
-              ? // CSS multi-column ("masonry") layout, not grid — each tile
-                // keeps its own real aspect ratio (see CompactGridCard), so a
-                // fixed-row grid would either crop images or leave ragged gaps
-                // under the shorter ones. Columns pack items of mixed heights
-                // tightly instead.
-                "columns-2 gap-x-1 sm:columns-3 sm:gap-x-1.5 md:columns-4 lg:columns-5 xl:columns-6"
+              ? // Wrapping flex row, not grid — every tile shares the same
+                // height (set on CompactGridCard) and derives its own width
+                // from the image's real aspect ratio, so tiles naturally
+                // wrap onto the next line as the row runs out of width,
+                // instead of being forced into uniform grid cells.
+                "flex flex-wrap gap-1"
               : "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4"
           }
         >
