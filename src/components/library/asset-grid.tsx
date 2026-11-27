@@ -103,7 +103,18 @@ function AudioThumb({ asset, className }: { asset: LibraryAssetListItem; classNa
  * error) -> a distinct "ảnh lỗi" state, never silently falling back to
  * NoPreview's "chưa có" wording, which would misreport a real failure as
  * "nothing generated yet". */
-function AssetThumb({ asset, className }: { asset: LibraryAssetListItem; className?: string }) {
+function AssetThumb({
+  asset,
+  className,
+  fit = "contain",
+}: {
+  asset: LibraryAssetListItem;
+  className?: string;
+  /** "cover" fills the thumbnail box edge-to-edge (used by the compact
+   * grid, which has no room around the image for contain's letterboxing)
+   * while "contain" (every other call site) never crops the image. */
+  fit?: "contain" | "cover";
+}) {
   const [state, setState] = useState<"loading" | "loaded" | "error">(asset.thumbnailUrl ? "loading" : "loaded");
 
   if (asset.type === "audio") return <AudioThumb asset={asset} className={className} />;
@@ -134,7 +145,11 @@ function AssetThumb({ asset, className }: { asset: LibraryAssetListItem; classNa
       <img
         src={asset.thumbnailUrl}
         alt={asset.name || "Tài sản chưa đặt tên"}
-        className={cn("max-h-full max-w-full object-contain transition-opacity", state === "loading" && "opacity-0")}
+        className={cn(
+          "transition-opacity",
+          fit === "cover" ? "size-full object-cover" : "max-h-full max-w-full object-contain",
+          state === "loading" && "opacity-0"
+        )}
         onLoad={() => setState("loaded")}
         onError={() => setState("error")}
       />
@@ -289,12 +304,12 @@ function FavoriteButton({ isFavorited, onToggle }: { isFavorited: boolean; onTog
 }
 
 /** Thumbnail-only grid card for Dashboard's "Tài sản gần đây" (see the
- * `compact` prop on AssetGrid) — just the image, a small status badge,
- * the favorite heart, and the existing actions menu, all as overlays on
- * the thumbnail itself. No name/brand/type text outside the image.
- * Tapping anywhere on the thumbnail opens the same `/library/[id]`
- * detail page as the full card — nothing about that destination
- * changes, only what the grid tile itself shows. */
+ * `compact` prop on AssetGrid) — just the image, the favorite heart, and
+ * the existing actions menu, as overlays on the thumbnail itself. No
+ * name/brand/type/status text outside or on top of the image. Tapping
+ * anywhere on the thumbnail opens the same `/library/[id]` detail page
+ * as the full card — nothing about that destination changes, only what
+ * the grid tile itself shows. */
 function CompactGridCard({
   asset,
   canDelete,
@@ -317,14 +332,7 @@ function CompactGridCard({
       href={`/library/${asset.id}`}
       className="group relative block aspect-square overflow-hidden rounded-lg outline-none transition-transform hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-ring"
     >
-      <AssetThumb asset={asset} className="size-full" />
-
-      <Badge
-        variant="outline"
-        className={cn("absolute top-1.5 left-1.5 px-1.5 py-0 text-[10px] backdrop-blur-sm", STATUS_BADGE_CLASS[asset.status])}
-      >
-        {ASSET_STATUS_LABEL[asset.status]}
-      </Badge>
+      <AssetThumb asset={asset} className="size-full" fit="cover" />
 
       <div className="absolute top-1.5 right-1.5">
         <FavoriteButton isFavorited={isFavorited} onToggle={onToggleFavorite} />
@@ -531,7 +539,7 @@ export function AssetGrid({
         <div
           className={
             compact
-              ? "grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-2 sm:gap-2.5"
+              ? "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-1 sm:gap-1.5"
               : "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4"
           }
         >
