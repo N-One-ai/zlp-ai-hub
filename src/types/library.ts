@@ -16,12 +16,17 @@ export interface LibraryAssetListItem {
    * migration 0017_asset_favorites.sql) — never a workspace-wide flag,
    * so this differs per viewer. */
   isFavorited: boolean;
+  /** Pixel dimensions of the source image, when known up front (not
+   * every asset has these recorded) — lets the Dashboard's compact grid
+   * size each tile to its real aspect ratio without waiting for the
+   * image itself to load. Null falls back to measuring the loaded
+   * <img>'s naturalWidth/naturalHeight instead. */
+  width: number | null;
+  height: number | null;
 }
 
 export interface LibraryAssetDetail extends LibraryAssetListItem {
   prompt: string | null;
-  width: number | null;
-  height: number | null;
   fileUrl: string | null;
   tags: string[];
   /** True when this asset came from the "Xây dựng nhân vật" (Character
