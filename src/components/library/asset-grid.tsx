@@ -108,8 +108,16 @@ function AudioThumb({ asset, className }: { asset: LibraryAssetListItem; classNa
       style={{ backgroundImage: `url(${AUDIO_THUMB_BG_URL})` }}
     >
       <Music
-        className="relative text-success drop-shadow-[0_1px_3px_rgba(0,0,0,0.45)]"
-        style={{ width: "30%", height: "30%", minWidth: 18, minHeight: 18, maxWidth: 56, maxHeight: 56 }}
+        className="relative drop-shadow-[0_1px_3px_rgba(0,0,0,0.45)]"
+        style={{
+          width: "15%",
+          height: "15%",
+          minWidth: 9,
+          minHeight: 9,
+          maxWidth: 28,
+          maxHeight: 28,
+          color: "#01ec57",
+        }}
       />
     </div>
   );
