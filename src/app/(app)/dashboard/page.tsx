@@ -143,7 +143,7 @@ export default async function DashboardPage() {
             }
           />
         ) : (
-          <AssetGrid assets={recentAssets} currentUserId={user?.id ?? ""} isAdmin={workspace.role === "admin"} />
+          <AssetGrid assets={recentAssets} currentUserId={user?.id ?? ""} isAdmin={workspace.role === "admin"} compact />
         )}
       </div>
     </div>

@@ -577,6 +577,24 @@ export interface Database {
         };
         Relationships: [];
       };
+      asset_favorites: {
+        Row: {
+          user_id: string;
+          asset_id: string;
+          created_at: string;
+        };
+        Insert: {
+          user_id: string;
+          asset_id: string;
+          created_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          asset_id?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       auth_gallery_images: {
         Row: {
           id: string;

@@ -7,6 +7,7 @@ import {
   AlertTriangle,
   Download,
   Eye,
+  Heart,
   Image as ImageIcon,
   LayoutGrid,
   LayoutTemplate,
@@ -41,6 +42,7 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { deleteAsset, renameAsset } from "@/lib/library/actions";
+import { toggleAssetFavorite } from "@/lib/library/favorites-actions";
 import { trackEvent } from "@/lib/analytics/track";
 import { ASSET_STATUS_LABEL, ASSET_TYPE_LABEL } from "@/lib/library/labels";
 import type { LibraryAssetListItem } from "@/types/library";
@@ -229,7 +231,16 @@ function GridCard({
         <span title={asset.name || "Chưa đặt tên"} className="min-w-0 flex-1 truncate text-sm font-medium">
           {asset.name || "Chưa đặt tên"}
         </span>
-        <div onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
+        {/* Both calls are needed: stopPropagation alone stops this click
+         * from reaching the parent <Link>'s own onClick (the one that
+         * would otherwise call preventDefault() and do a CLIENT-SIDE
+         * navigation instead) — but with that onClick never reached,
+         * nothing calls preventDefault(), so the browser's NATIVE "this
+         * is inside an <a href>, navigate there" default action still
+         * fires a few seconds later as a full page reload once dispatch
+         * finishes with defaultPrevented still false. preventDefault()
+         * here stops that native fallback navigation too. */}
+        <div onClick={(e) => { e.preventDefault(); e.stopPropagation(); }} onPointerDown={(e) => e.stopPropagation()}>
           <AssetActions
             asset={asset}
             canDelete={canDelete}
@@ -243,6 +254,100 @@ function GridCard({
         <span className="truncate">{asset.brandName}</span>
         <span>·</span>
         <span className="shrink-0">{ASSET_TYPE_LABEL[asset.type]}</span>
+      </div>
+    </Link>
+  );
+}
+
+/** Heart toggle for the compact grid. Both stopPropagation AND
+ * preventDefault on the click are required — stopPropagation alone
+ * stops this click from reaching the card's own <Link> onClick (so no
+ * client-side navigation), but leaves the browser's native "inside an
+ * <a href>, navigate there" default action unprevented, which still
+ * fires a few seconds later as a full page reload. preventDefault()
+ * here stops that native fallback too. */
+function FavoriteButton({ isFavorited, onToggle }: { isFavorited: boolean; onToggle: () => void }) {
+  return (
+    <div
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      <button
+        type="button"
+        aria-label={isFavorited ? "Bỏ yêu thích" : "Yêu thích"}
+        aria-pressed={isFavorited}
+        onClick={onToggle}
+        className="flex size-7 items-center justify-center rounded-full bg-background/70 text-foreground/70 backdrop-blur-sm transition-colors hover:text-destructive"
+      >
+        <Heart className={cn("size-3.5", isFavorited && "fill-destructive text-destructive")} />
+      </button>
+    </div>
+  );
+}
+
+/** Thumbnail-only grid card for Dashboard's "Tài sản gần đây" (see the
+ * `compact` prop on AssetGrid) — just the image, a small status badge,
+ * the favorite heart, and the existing actions menu, all as overlays on
+ * the thumbnail itself. No name/brand/type text outside the image.
+ * Tapping anywhere on the thumbnail opens the same `/library/[id]`
+ * detail page as the full card — nothing about that destination
+ * changes, only what the grid tile itself shows. */
+function CompactGridCard({
+  asset,
+  canDelete,
+  isPending,
+  isFavorited,
+  onToggleFavorite,
+  onRequestDelete,
+  onRequestRename,
+}: {
+  asset: LibraryAssetListItem;
+  canDelete: boolean;
+  isPending: boolean;
+  isFavorited: boolean;
+  onToggleFavorite: () => void;
+  onRequestDelete: (asset: LibraryAssetListItem) => void;
+  onRequestRename: (asset: LibraryAssetListItem) => void;
+}) {
+  return (
+    <Link
+      href={`/library/${asset.id}`}
+      className="group relative block aspect-square overflow-hidden rounded-lg outline-none transition-transform hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <AssetThumb asset={asset} className="size-full" />
+
+      <Badge
+        variant="outline"
+        className={cn("absolute top-1.5 left-1.5 px-1.5 py-0 text-[10px] backdrop-blur-sm", STATUS_BADGE_CLASS[asset.status])}
+      >
+        {ASSET_STATUS_LABEL[asset.status]}
+      </Badge>
+
+      <div className="absolute top-1.5 right-1.5">
+        <FavoriteButton isFavorited={isFavorited} onToggle={onToggleFavorite} />
+      </div>
+
+      {/* Always visible (not hover-only) — a hover-reveal would leave
+       * this unreachable by touch on mobile, where there's no hover
+       * state, breaking "giữ nguyên menu thao tác" there. */}
+      <div
+        className="absolute bottom-1.5 right-1.5 rounded-full bg-background/70 backdrop-blur-sm"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        }}
+        onPointerDown={(e) => e.stopPropagation()}
+      >
+        <AssetActions
+          asset={asset}
+          canDelete={canDelete}
+          isPending={isPending}
+          onRequestDelete={onRequestDelete}
+          onRequestRename={onRequestRename}
+        />
       </div>
     </Link>
   );
@@ -283,7 +388,7 @@ function ListRow({
       <span className="hidden shrink-0 text-xs tabular-nums text-muted-foreground md:inline">
         {new Date(asset.createdAt).toLocaleDateString("vi-VN")}
       </span>
-      <div onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
+      <div onClick={(e) => { e.preventDefault(); e.stopPropagation(); }} onPointerDown={(e) => e.stopPropagation()}>
         <AssetActions
           asset={asset}
           canDelete={canDelete}
@@ -300,10 +405,17 @@ export function AssetGrid({
   assets,
   currentUserId,
   isAdmin,
+  compact = false,
 }: {
   assets: LibraryAssetListItem[];
   currentUserId: string;
   isAdmin: boolean;
+  /** Thumbnail-only grid cards (CompactGridCard) instead of the full
+   * name/brand/type card — used by Dashboard's "Tài sản gần đây" only.
+   * Scoped to GRID mode: list mode (ListRow) is identical either way,
+   * and /library's own call site simply never passes this, so its look
+   * is completely untouched. */
+  compact?: boolean;
 }) {
   const router = useRouter();
   const [view, setView] = useState<"grid" | "list">("grid");
@@ -312,11 +424,38 @@ export function AssetGrid({
   const [renameValue, setRenameValue] = useState("");
   const [isRenaming, setIsRenaming] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const [favoriteIds, setFavoriteIds] = useState(
+    () => new Set(assets.filter((a) => a.isFavorited).map((a) => a.id))
+  );
 
   if (assets.length === 0) return null;
 
   function canDelete(asset: LibraryAssetListItem) {
     return isAdmin || asset.ownerId === currentUserId;
+  }
+
+  function handleToggleFavorite(asset: LibraryAssetListItem) {
+    const next = !favoriteIds.has(asset.id);
+    setFavoriteIds((prev) => {
+      const copy = new Set(prev);
+      if (next) copy.add(asset.id);
+      else copy.delete(asset.id);
+      return copy;
+    });
+    startTransition(async () => {
+      const result = await toggleAssetFavorite(asset.id, next);
+      if (!result.ok) {
+        toast.error(result.error.message);
+        // Roll back the optimistic update — the server-side state didn't
+        // actually change, so the UI shouldn't claim it did.
+        setFavoriteIds((prev) => {
+          const copy = new Set(prev);
+          if (next) copy.delete(asset.id);
+          else copy.add(asset.id);
+          return copy;
+        });
+      }
+    });
   }
 
   function handleConfirmDelete() {
@@ -389,17 +528,36 @@ export function AssetGrid({
       </div>
 
       {view === "grid" ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
-          {assets.map((asset) => (
-            <GridCard
-              key={asset.id}
-              asset={asset}
-              canDelete={canDelete(asset)}
-              isPending={isPending}
-              onRequestDelete={setDeleteTarget}
-              onRequestRename={openRename}
-            />
-          ))}
+        <div
+          className={
+            compact
+              ? "grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-2 sm:gap-2.5"
+              : "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4"
+          }
+        >
+          {assets.map((asset) =>
+            compact ? (
+              <CompactGridCard
+                key={asset.id}
+                asset={asset}
+                canDelete={canDelete(asset)}
+                isPending={isPending}
+                isFavorited={favoriteIds.has(asset.id)}
+                onToggleFavorite={() => handleToggleFavorite(asset)}
+                onRequestDelete={setDeleteTarget}
+                onRequestRename={openRename}
+              />
+            ) : (
+              <GridCard
+                key={asset.id}
+                asset={asset}
+                canDelete={canDelete(asset)}
+                isPending={isPending}
+                onRequestDelete={setDeleteTarget}
+                onRequestRename={openRename}
+              />
+            )
+          )}
         </div>
       ) : (
         <div className="flex flex-col gap-2">
