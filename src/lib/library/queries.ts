@@ -101,7 +101,7 @@ export async function getAssetDetail(assetId: string): Promise<LibraryAssetDetai
   const { data, error } = await supabase
     .from("creative_assets")
     .select(
-      "id, type, name, brand_id, campaign, status, owner_id, storage_path, width, height, prompt, tags, created_at, brands(name), profiles(name, email), generation_jobs(requested_model, final_model, params)"
+      "id, type, name, brand_id, campaign, status, owner_id, storage_path, width, height, prompt, tags, created_at, brands(name), profiles(name, email), generation_jobs(requested_model, final_model, params, character_id)"
     )
     .eq("id", assetId)
     .maybeSingle();
@@ -131,6 +131,7 @@ export async function getAssetDetail(assetId: string): Promise<LibraryAssetDetai
       requested_model: string | null;
       final_model: string | null;
       params: { aspectRatio?: string | null; resolution?: string | null } | null;
+      character_id: string | null;
     } | null;
   };
 
@@ -156,6 +157,7 @@ export async function getAssetDetail(assetId: string): Promise<LibraryAssetDetai
     ownerName: row.profiles?.name || row.profiles?.email || "—",
     thumbnailUrl: await resolveSignedAssetUrl(supabase, row.storage_path),
     fileUrl: await resolveSignedAssetUrl(supabase, row.storage_path),
+    isCharacterAsset: row.generation_jobs?.character_id != null,
     prompt: row.prompt,
     width: row.width,
     height: row.height,
