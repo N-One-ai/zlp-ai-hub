@@ -68,7 +68,7 @@ export function BannerCarousel({ banners }: { banners: DashboardBanner[] }) {
       }}
       onKeyDown={handleKeyDown}
     >
-      <div className="h-full overflow-hidden rounded-feature">
+      <div className="h-full overflow-hidden rounded-feature ring-1 ring-border">
         <div
           className="flex h-full w-full transition-transform duration-500 ease-out motion-reduce:transition-none"
           style={{ transform: `translateX(-${index * 100}%)` }}
