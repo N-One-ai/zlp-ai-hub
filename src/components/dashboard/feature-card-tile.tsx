@@ -79,7 +79,7 @@ export function DashboardFeatureCardTile({
   // strip's height to 0 at desktop widths before this fix (same root
   // cause already fixed once for BannerSlideContent).
   const className = cn(
-    "group relative flex size-full flex-col @sm:flex-row overflow-hidden rounded-feature hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background transition-all",
+    "group relative flex size-full flex-col @sm:flex-row overflow-hidden rounded-feature ring-1 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background transition-all",
     bg.className
   );
 
